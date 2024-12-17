@@ -4,7 +4,7 @@ mod definitions {
     pub(super) const BUILD: &str = "1.33.6.0";
     pub(super) const VERSION_NUM: u32 = 67;
     pub(super) const PLATFORM_STRING: &str = "IOS";
-    pub(super) const DEVICE_ID: &str = "wasmegg";
+    pub(super) const DEVICE_ID: &str = "egginc-bot";
     pub(super) const PLATFORM: i32 = super::proto::Platform::Ios as i32;
     pub(super) const API_BACKEND: &str =
         "https://ctx-dot-auxbrainhome.appspot.com/ei/bot_first_contact";
@@ -120,6 +120,36 @@ pub mod types {
         pub fn land(&self) -> i64 {
             self.duration() + self.launched()
         }
+
+        pub fn ship_friendly_name(ship: super::proto::mission_info::Spaceship) -> &'static str {
+            use super::proto::mission_info::Spaceship;
+            #[allow(non_snake_case)]
+            match ship {
+                Spaceship::ChickenOne => "Chicken One",
+                Spaceship::ChickenNine => "Chicken Nine",
+                Spaceship::ChickenHeavy => "Chicken Heavy",
+                Spaceship::Bcr => "BCR",
+                Spaceship::MilleniumChicken => "Quintillion Chicken",
+                Spaceship::CorellihenCorvette => "Cornish-Hen Corvette",
+                Spaceship::Galeggtica => "Galeggtica",
+                Spaceship::Chickfiant => "Defihent",
+                Spaceship::Voyegger => "Voyegger",
+                Spaceship::Henerprise => "Henerprise",
+                Spaceship::Atreggies => "Atreggies Henliner",
+            }
+        }
+
+        pub fn duration_friendly_name(
+            duration: super::proto::mission_info::DurationType,
+        ) -> &'static str {
+            use super::proto::mission_info::DurationType;
+            match duration {
+                DurationType::Short => "Short",
+                DurationType::Long => "Long",
+                DurationType::Epic => "Epic",
+                DurationType::Tutorial => "Tutorial",
+            }
+        }
     }
 
     impl From<super::proto::MissionInfo> for SpaceShipInfo {
@@ -127,8 +157,8 @@ pub mod types {
             Self {
                 name: format!(
                     "{} {}",
-                    value.duration_type().as_str_name(),
-                    value.ship().as_str_name()
+                    Self::duration_friendly_name(value.duration_type()),
+                    Self::ship_friendly_name(value.ship())
                 ),
                 id: value.identifier().to_string(),
                 duration: value.duration_seconds() as i64,
@@ -142,12 +172,6 @@ pub mod types {
     impl From<&super::proto::Backup> for Username {
         fn from(value: &super::proto::Backup) -> Self {
             Self(value.user_name().into())
-        }
-    }
-
-    impl std::fmt::Display for Username {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.0)
         }
     }
 
@@ -317,7 +341,7 @@ pub mod monitor {
                     )
                     .await;
                 pending.push(format!(
-                    "Found new spaceship: {}({}), launch time: {}, land time: {}",
+                    "Found new spaceship: {}(__{}__), launch time: {}, land time: {}",
                     mission.name(),
                     mission.id(),
                     timestamp_to_string(mission.launched()),
@@ -331,8 +355,10 @@ pub mod monitor {
 
             bot.send_message(
                 user.chat_id(),
-                TELEGRAM_ESCAPE_RE
-                    .replace_all(&format!("{}:\n{}", user.name(), pending.join("\n")), "\\$1"),
+                TELEGRAM_ESCAPE_RE.replace_all(
+                    &format!("*{}*:\n{}", user.name(), pending.join("\n")),
+                    "\\$1",
+                ),
             )
             .await?;
 
