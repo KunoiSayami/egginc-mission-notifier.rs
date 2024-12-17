@@ -296,6 +296,8 @@ pub mod monitor {
                 //bot.send_message(user.user().into(), "Query mission failure");
             };
 
+            log::trace!("{}({}) missions {missions:?}", user.name(), user.ei());
+
             let mut pending = Vec::new();
 
             for mission in missions {
@@ -315,9 +317,10 @@ pub mod monitor {
                     )
                     .await;
                 pending.push(format!(
-                    "Found new spaceship: {}({}), land time: {}",
+                    "Found new spaceship: {}({}), launch time: {}, land time: {}",
                     mission.name(),
                     mission.id(),
+                    timestamp_to_string(mission.launched()),
                     timestamp_to_string(mission.land())
                 ));
             }

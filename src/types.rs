@@ -13,7 +13,7 @@ pub fn timestamp_to_string(timestamp: i64) -> String {
         .to_string()
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Clone, Debug, FromRow, Eq)]
 pub struct Player {
     ei: String,
     user: i64,
@@ -64,17 +64,16 @@ impl PartialEq for Player {
     }
 }
 
-impl Eq for Player {}
-
 impl std::fmt::Display for Player {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} {} {} {}",
+            "{} {} {} {} {}",
             self.ei,
             self.name(),
             self.user,
             timestamp_to_string(self.last_fetch),
+            return_tf_emoji(!self.disabled)
         )
     }
 }
@@ -107,5 +106,13 @@ impl SpaceShip {
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+}
+
+pub fn return_tf_emoji(input: bool) -> &'static str {
+    if input {
+        "✅"
+    } else {
+        "❌"
     }
 }

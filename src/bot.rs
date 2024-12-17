@@ -1,5 +1,6 @@
 use std::sync::{Arc, LazyLock};
 
+use admin::handle_admin_command;
 use anyhow::anyhow;
 use itertools::Itertools;
 use teloxide::{
@@ -16,7 +17,7 @@ use crate::{
     config::Config,
     database::DatabaseHelper,
     egg::monitor::{MonitorHelper, LAST_QUERY},
-    types::{timestamp_to_string, DEFAULT_NICKNAME},
+    types::{return_tf_emoji, timestamp_to_string, DEFAULT_NICKNAME},
 };
 
 pub type BotType = DefaultParseMode<Bot>;
@@ -40,6 +41,65 @@ pub static USERNAME_CHECKER_RE: LazyLock<regex::Regex> =
     }
 } */
 
+mod admin {
+
+    use std::str::FromStr;
+
+    use super::*;
+
+    #[derive(Clone, Debug)]
+    pub(super) enum AdminCommand {
+        Query { ei: Option<String> },
+    }
+
+    impl FromStr for AdminCommand {
+        type Err = &'static str;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            if s.contains(' ') {
+                let (first, second) = s.split_once(' ').unwrap();
+
+                match first {
+                    "query" => Ok(Self::Query {
+                        ei: Some(second.to_string()),
+                    }),
+                    _ => Err("Invalid command"),
+                }
+            } else {
+                match s {
+                    "query" => Ok(Self::Query { ei: None }),
+                    _ => Err("Invalid command"),
+                }
+            }
+        }
+    }
+    pub(crate) async fn handle_admin_command(
+        bot: BotType,
+        arg: Arc<NecessaryArg>,
+        msg: Message,
+        line: String,
+    ) -> anyhow::Result<()> {
+        if !arg.check_admin(msg.chat.id) {
+            return Ok(());
+        }
+
+        let command: Result<AdminCommand, &str> = line.parse();
+
+        match command {
+            Ok(AdminCommand::Query { ei }) => {
+                if let Some(ei) = ei {
+                    arg.database().player_timestamp_reset(ei).await;
+                }
+                arg.monitor().new_client().await;
+                bot.send_message(msg.chat.id, "Request sent").await
+            }
+            Err(e) => bot.send_message(msg.chat.id, e).await,
+        }?;
+
+        Ok(())
+    }
+}
+
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase")]
 enum Command {
@@ -47,6 +107,7 @@ enum Command {
     Delete { ei: String },
     List,
     Missions { user: String },
+    Admin { line: String },
     Ping,
 }
 
@@ -118,6 +179,7 @@ pub async fn bot_run(
                         Command::Missions { user } => {
                             handle_missions_command(bot, arg, msg, user).await
                         }
+                        Command::Admin { line } => handle_admin_command(bot, arg, msg, line).await,
                     }
                     .inspect_err(|e| log::error!("Handle command error: {e:?}"))
                 },
@@ -187,7 +249,8 @@ pub async fn handle_add_command(
 
     Ok(())
 }
-pub async fn handle_delete_command(
+
+async fn handle_delete_command(
     bot: BotType,
     arg: Arc<NecessaryArg>,
     msg: Message,
@@ -210,7 +273,7 @@ pub async fn handle_delete_command(
     Ok(())
 }
 
-pub async fn handle_ping(bot: BotType, msg: Message, arg: Arc<NecessaryArg>) -> anyhow::Result<()> {
+async fn handle_ping(bot: BotType, msg: Message, arg: Arc<NecessaryArg>) -> anyhow::Result<()> {
     bot.send_message(
         msg.chat.id,
         TELEGRAM_ESCAPE_RE.replace_all(
@@ -230,7 +293,7 @@ pub async fn handle_ping(bot: BotType, msg: Message, arg: Arc<NecessaryArg>) -> 
     Ok(())
 }
 
-pub async fn handle_list_command(
+async fn handle_list_command(
     bot: BotType,
     arg: Arc<NecessaryArg>,
     msg: Message,
@@ -260,7 +323,7 @@ pub async fn handle_list_command(
     Ok(())
 }
 
-pub async fn handle_missions_command(
+async fn handle_missions_command(
     bot: BotType,
     arg: Arc<NecessaryArg>,
     msg: Message,
@@ -296,7 +359,7 @@ pub async fn handle_missions_command(
                         "{} {} {}",
                         s.name(),
                         timestamp_to_string(s.land()),
-                        s.notified()
+                        return_tf_emoji(s.notified())
                     ))
                     .join("\n")
             )

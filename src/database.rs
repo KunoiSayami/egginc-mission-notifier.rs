@@ -148,6 +148,24 @@ impl Database {
         Ok(())
     }
 
+    pub async fn set_player_status(&mut self, ei: &str, last: i64, disabled: bool) -> DBResult<()> {
+        sqlx::query(r#"UPDATE "player" SET "last_fetch" = ?, "disabled" = ? WHERE "ei" = ? "#)
+            .bind(last)
+            .bind(disabled)
+            .bind(ei)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn player_timestamp_reset(&mut self, ei: &str) -> DBResult<()> {
+        sqlx::query(r#"UPDATE "player" SET "last_fetch" = 0 WHERE "ei" = ? "#)
+            .bind(ei)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
     pub async fn insert_spaceship(
         &mut self,
         id: String,
@@ -198,16 +216,6 @@ impl Database {
         Ok(())
     }
 
-    pub async fn set_player_status(&mut self, ei: &str, last: i64, disabled: bool) -> DBResult<()> {
-        sqlx::query(r#"UPDATE "player" SET "last_fetch" = ?, "disabled" = ? WHERE "ei" = ? "#)
-            .bind(last)
-            .bind(disabled)
-            .bind(ei)
-            .execute(&mut self.conn)
-            .await?;
-        Ok(())
-    }
-
     pub async fn close(self) -> DBResult<()> {
         self.conn.close().await
     }
@@ -218,9 +226,6 @@ impl DatabaseCheckExt for Database {
         &mut self.conn
     }
 }
-
-//pub type DBCallSender<T> = tokio::sync::oneshot::Sender<T>;
-//pub type DBCallback<T> = tokio::sync::oneshot::Receiver<T>;
 
 kstool_helper_generator::oneshot_helper! {
 #[derive(Debug)]
@@ -254,6 +259,10 @@ pub enum DatabaseEvent {
     PlayerNameUpdate {
         ei: String,
         name: String,
+    },
+
+    PlayerTimestampReset {
+        ei: String,
     },
 
     MissionAdd {
@@ -381,6 +390,9 @@ impl DatabaseHandle {
                 __private_sender
                     .send(database.query_spaceship_by_ei(&ei).await?)
                     .ok();
+            }
+            DatabaseEvent::PlayerTimestampReset { ei } => {
+                database.player_timestamp_reset(&ei).await?;
             }
         }
         Ok(())
