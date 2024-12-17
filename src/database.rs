@@ -100,7 +100,7 @@ impl Database {
     }
 
     pub async fn query_ei(&mut self, user: i64) -> DBResult<Vec<Player>> {
-        sqlx::query_as(r#"SELECT * FROM "player" WHERE "user" = ? "#)
+        sqlx::query_as(r#"SELECT * FROM "player" WHERE "user" = ? ORDER BY "ei""#)
             .bind(user)
             .fetch_all(&mut self.conn)
             .await
@@ -163,6 +163,30 @@ impl Database {
             .bind(ei)
             .execute(&mut self.conn)
             .await?;
+        Ok(())
+    }
+
+    pub async fn player_status_reset(&mut self, ei: &str, status: i32) -> DBResult<()> {
+        sqlx::query(r#"UPDATE "player" SET "disabled" = ? WHERE "ei" = ? "#)
+            .bind(!status)
+            .bind(ei)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn player_mission_reset(&mut self, ei: &str, limit: usize) -> DBResult<()> {
+        for spaceship in self
+            .query_spaceship_by_ei(ei)
+            .await?
+            .into_iter()
+            .take(limit)
+        {
+            sqlx::query(r#"UPDATE "spaceship" SET "notified" = 0 WHERE "id" = ?"#)
+                .bind(spaceship.id())
+                .execute(&mut self.conn)
+                .await?;
+        }
         Ok(())
     }
 
@@ -263,6 +287,14 @@ pub enum DatabaseEvent {
 
     PlayerTimestampReset {
         ei: String,
+    },
+    PlayerMissionReset {
+        ei: String,
+        limit: usize,
+    },
+    PlayerStatusReset {
+        ei: String,
+        status: i32,
     },
 
     MissionAdd {
@@ -394,6 +426,12 @@ impl DatabaseHandle {
             DatabaseEvent::PlayerTimestampReset { ei } => {
                 database.player_timestamp_reset(&ei).await?;
             }
+            DatabaseEvent::PlayerMissionReset { ei, limit } => {
+                database.player_mission_reset(&ei, limit).await?;
+            }
+            DatabaseEvent::PlayerStatusReset { ei, status } => {
+                database.player_status_reset(&ei, status).await?;
+            }
         }
         Ok(())
     }
@@ -405,7 +443,8 @@ impl DatabaseHandle {
             }
             Self::handle_event(&mut database, event)
                 .await
-                .inspect_err(|e| error!("Sqlite error: {e:?}"))?;
+                .inspect_err(|e| error!("Sqlite error: {e:?}"))
+                .ok();
         }
         database.close().await?;
         Ok(())

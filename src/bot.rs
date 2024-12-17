@@ -54,10 +54,12 @@ mod admin {
 
     use super::*;
 
-    #[derive(Clone, Debug)]
+    //#[derive(Clone, Debug)]
+    #[allow(unused)]
     pub(super) enum AdminCommand {
         Query { ei: Option<String> },
-        /* Test, */
+        ResetNotify { ei: String, limit: i32 },
+        Enable { ei: String },
     }
 
     impl FromStr for AdminCommand {
@@ -70,6 +72,24 @@ mod admin {
                 match first {
                     "query" => Ok(Self::Query {
                         ei: Some(second.to_string()),
+                    }),
+                    "reset" => {
+                        if second.contains(' ') {
+                            let (second1, second2) = second.split_once(' ').unwrap();
+                            if USERNAME_CHECKER_RE.is_match(second1) {
+                                Ok(Self::ResetNotify {
+                                    ei: second1.to_string(),
+                                    limit: second2.parse().map_err(|_| "Parse number error")?,
+                                })
+                            } else {
+                                Err("Wrong EI format")
+                            }
+                        } else {
+                            Err("Invalid format")
+                        }
+                    }
+                    "enable" => Ok(Self::Enable {
+                        ei: second.to_string(),
                     }),
                     _ => Err("Invalid command"),
                 }
@@ -106,6 +126,16 @@ mod admin {
                 bot.send_message(msg.chat.id, "_te*st_\n*te_st*\n__test__")
                     .await
             } */
+            Ok(AdminCommand::ResetNotify { ei, limit }) => {
+                arg.database()
+                    .player_mission_reset(ei, limit as usize)
+                    .await;
+                bot.send_message(msg.chat.id, "Mission reset").await
+            }
+            Ok(AdminCommand::Enable { ei }) => {
+                arg.database().player_status_reset(ei, 1).await;
+                bot.send_message(msg.chat.id, "User enabled").await
+            }
             Err(e) => bot.send_message(msg.chat.id, e).await,
         }?;
 

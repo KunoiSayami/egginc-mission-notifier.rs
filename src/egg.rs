@@ -434,7 +434,7 @@ pub mod monitor {
                         replace_all(player.name()),
                         missions
                             .into_iter()
-                            .map(|s| format!("__{}__ returned!", s.name()))
+                            .map(|s| format!("__{}__ returned\\!", s.name()))
                             .join("\n"),
                     ));
             }
