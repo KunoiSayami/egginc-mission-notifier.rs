@@ -341,7 +341,7 @@ pub mod monitor {
                     )
                     .await;
                 pending.push(format!(
-                    "Found new spaceship: {}\\(_{}_\\), launch time: {}, land time: {}",
+                    "Found new spaceship: {} \\(_{}_\\), launch time: {}, land time: {}",
                     mission.name(),
                     replace_all(mission.id()),
                     replace_all(&timestamp_to_string(mission.launched())),
@@ -393,6 +393,15 @@ pub mod monitor {
                 database
                     .player_update(player.ei().to_string(), ret.is_err())
                     .await;
+                if ret.is_err() {
+                    bot.send_message(
+                        player.chat_id(),
+                        "Remote query got error, disable this account",
+                    )
+                    .await
+                    .inspect_err(|e| log::error!("Send message error: {e:?}"))
+                    .ok();
+                }
                 //log::debug!("Query {} finished", player.ei());
             }
             Ok(())

@@ -166,9 +166,9 @@ impl Database {
         Ok(())
     }
 
-    pub async fn player_status_reset(&mut self, ei: &str, status: i32) -> DBResult<()> {
+    pub async fn player_status_reset(&mut self, ei: &str, disabled: bool) -> DBResult<()> {
         sqlx::query(r#"UPDATE "player" SET "disabled" = ? WHERE "ei" = ? "#)
-            .bind(!status)
+            .bind(disabled)
             .bind(ei)
             .execute(&mut self.conn)
             .await?;
@@ -294,7 +294,7 @@ pub enum DatabaseEvent {
     },
     PlayerStatusReset {
         ei: String,
-        status: i32,
+        disabled: bool,
     },
 
     MissionAdd {
@@ -429,8 +429,8 @@ impl DatabaseHandle {
             DatabaseEvent::PlayerMissionReset { ei, limit } => {
                 database.player_mission_reset(&ei, limit).await?;
             }
-            DatabaseEvent::PlayerStatusReset { ei, status } => {
-                database.player_status_reset(&ei, status).await?;
+            DatabaseEvent::PlayerStatusReset { ei, disabled } => {
+                database.player_status_reset(&ei, disabled).await?;
             }
         }
         Ok(())

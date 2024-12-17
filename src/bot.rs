@@ -59,7 +59,7 @@ mod admin {
     pub(super) enum AdminCommand {
         Query { ei: Option<String> },
         ResetNotify { ei: String, limit: i32 },
-        Enable { ei: String },
+        User { ei: String, enabled: bool },
     }
 
     impl FromStr for AdminCommand {
@@ -88,8 +88,9 @@ mod admin {
                             Err("Invalid format")
                         }
                     }
-                    "enable" => Ok(Self::Enable {
+                    "enable" | "disable" => Ok(Self::User {
                         ei: second.to_string(),
+                        enabled: first.eq("enable"),
                     }),
                     _ => Err("Invalid command"),
                 }
@@ -132,9 +133,13 @@ mod admin {
                     .await;
                 bot.send_message(msg.chat.id, "Mission reset").await
             }
-            Ok(AdminCommand::Enable { ei }) => {
-                arg.database().player_status_reset(ei, 1).await;
-                bot.send_message(msg.chat.id, "User enabled").await
+            Ok(AdminCommand::User { ei, enabled }) => {
+                arg.database().player_status_reset(ei, !enabled).await;
+                bot.send_message(
+                    msg.chat.id,
+                    format!("User {}", if enabled { "enabled" } else { "disabled" }),
+                )
+                .await
             }
             Err(e) => bot.send_message(msg.chat.id, e).await,
         }?;
