@@ -195,7 +195,7 @@ pub mod monitor {
     use teloxide::prelude::Requester;
     use tokio::{task::JoinHandle, time::interval};
 
-    use crate::bot::TELEGRAM_ESCAPE_RE;
+    use crate::bot::replace_all;
     use crate::types::timestamp_to_string;
     use crate::{bot::BotType, database::DatabaseHelper, types::Player, FETCH_PERIOD};
 
@@ -341,11 +341,11 @@ pub mod monitor {
                     )
                     .await;
                 pending.push(format!(
-                    "Found new spaceship: {}(__{}__), launch time: {}, land time: {}",
+                    "Found new spaceship: {}\\(_{}_\\), launch time: {}, land time: {}",
                     mission.name(),
-                    mission.id(),
-                    timestamp_to_string(mission.launched()),
-                    timestamp_to_string(mission.land())
+                    replace_all(mission.id()),
+                    replace_all(&timestamp_to_string(mission.launched())),
+                    replace_all(&timestamp_to_string(mission.land()))
                 ));
             }
 
@@ -355,10 +355,7 @@ pub mod monitor {
 
             bot.send_message(
                 user.chat_id(),
-                TELEGRAM_ESCAPE_RE.replace_all(
-                    &format!("*{}*:\n{}", user.name(), pending.join("\n")),
-                    "\\$1",
-                ),
+                &format!("*{}*:\n{}", replace_all(user.name()), pending.join("\n")),
             )
             .await?;
 
@@ -433,21 +430,17 @@ pub mod monitor {
                     .entry(player.chat_id())
                     .or_insert_with(Vec::new)
                     .push(format!(
-                        "{}:\n{}",
-                        player.name(),
+                        "*{}*:\n{}",
+                        replace_all(player.name()),
                         missions
                             .into_iter()
-                            .map(|s| format!("{} returned!", s.name()))
+                            .map(|s| format!("__{}__ returned!", s.name()))
                             .join("\n"),
                     ));
             }
 
             for (player, msg) in msg_map {
-                bot.send_message(
-                    player,
-                    TELEGRAM_ESCAPE_RE.replace_all(&msg.join("\n\n"), "\\$1"),
-                )
-                .await?;
+                bot.send_message(player, msg.join("\n\n")).await?;
             }
             Ok(())
         }

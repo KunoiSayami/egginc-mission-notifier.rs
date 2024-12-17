@@ -17,12 +17,12 @@ use crate::{
     config::Config,
     database::DatabaseHelper,
     egg::monitor::{MonitorHelper, LAST_QUERY},
-    types::{return_tf_emoji, timestamp_to_string, DEFAULT_NICKNAME},
+    types::{return_tf_emoji, timestamp_to_string},
 };
 
 pub type BotType = DefaultParseMode<Bot>;
 
-pub static TELEGRAM_ESCAPE_RE: LazyLock<regex::Regex> =
+static TELEGRAM_ESCAPE_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"([_*\[\]\(\)~>#\+\-=|\{}\.!])").unwrap());
 pub static USERNAME_CHECKER_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^EI\d{16}$").unwrap());
@@ -41,6 +41,13 @@ pub static USERNAME_CHECKER_RE: LazyLock<regex::Regex> =
     }
 } */
 
+pub fn replace_all<'a>(s: &'a str) -> std::borrow::Cow<'a, str> {
+    TELEGRAM_ESCAPE_RE.replace_all(s, "\\$1")
+    /* .replace("\\*\\*", "**")
+    .replace("\\_\\_", "__")
+    .replace("\\~\\~", "~~") */
+}
+
 mod admin {
 
     use std::str::FromStr;
@@ -50,6 +57,7 @@ mod admin {
     #[derive(Clone, Debug)]
     pub(super) enum AdminCommand {
         Query { ei: Option<String> },
+        /* Test, */
     }
 
     impl FromStr for AdminCommand {
@@ -68,6 +76,7 @@ mod admin {
             } else {
                 match s {
                     "query" => Ok(Self::Query { ei: None }),
+                    /* "test" => Ok(Self::Test), */
                     _ => Err("Invalid command"),
                 }
             }
@@ -93,6 +102,10 @@ mod admin {
                 arg.monitor().new_client().await;
                 bot.send_message(msg.chat.id, "Request sent").await
             }
+            /* Ok(AdminCommand::Test) => {
+                bot.send_message(msg.chat.id, "_te*st_\n*te_st*\n__test__")
+                    .await
+            } */
             Err(e) => bot.send_message(msg.chat.id, e).await,
         }?;
 
@@ -276,17 +289,14 @@ async fn handle_delete_command(
 async fn handle_ping(bot: BotType, msg: Message, arg: Arc<NecessaryArg>) -> anyhow::Result<()> {
     bot.send_message(
         msg.chat.id,
-        TELEGRAM_ESCAPE_RE.replace_all(
-            &format!(
-                "Chat id: `{id}`\nLast query: `{last_query}`\nIs admin: {is_admin}\nVersion: {version}",
-                id = msg.chat.id.0,
-                last_query = timestamp_to_string(
-                    LAST_QUERY.load(std::sync::atomic::Ordering::Relaxed) as i64
-                ),
-                is_admin = arg.check_admin(msg.chat.id),
-                version = env!("CARGO_PKG_VERSION")
-            ),
-            "\\$1",
+        &format!(
+            "Chat id: `{id}`\nLast query: `{last_query}`\nIs admin: {is_admin}\nVersion: {version}",
+            id = msg.chat.id.0,
+            last_query = replace_all(&timestamp_to_string(
+                LAST_QUERY.load(std::sync::atomic::Ordering::Relaxed) as i64
+            )),
+            is_admin = arg.check_admin(msg.chat.id),
+            version = replace_all(env!("CARGO_PKG_VERSION"))
         ),
     )
     .await?;
@@ -316,7 +326,7 @@ async fn handle_list_command(
 
     bot.send_message(
         msg.chat.id,
-        TELEGRAM_ESCAPE_RE.replace_all(&ret.into_iter().map(|s| s.to_string()).join("\n"), "\\$1"),
+        ret.into_iter().map(|s| s.to_string()).join("\n"),
     )
     .await?;
 
@@ -351,14 +361,14 @@ async fn handle_missions_command(
         .into_iter()
         .map(|(player, spaceships)| {
             format!(
-                "{}:\n{}",
-                player.nickname().unwrap_or(&*DEFAULT_NICKNAME),
+                "*{}*:\n{}",
+                replace_all(player.name()),
                 spaceships
                     .into_iter()
                     .map(|s| format!(
                         "{} {} {}",
-                        s.name(),
-                        timestamp_to_string(s.land()),
+                        replace_all(s.name()),
+                        replace_all(&timestamp_to_string(s.land())),
                         return_tf_emoji(s.notified())
                     ))
                     .join("\n")
@@ -366,8 +376,7 @@ async fn handle_missions_command(
         })
         .join("\n\n");
 
-    bot.send_message(msg.chat.id, TELEGRAM_ESCAPE_RE.replace_all(&text, "\\$1"))
-        .await?;
+    bot.send_message(msg.chat.id, text).await?;
 
     Ok(())
 }

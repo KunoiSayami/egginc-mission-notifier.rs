@@ -4,6 +4,8 @@ use chrono::DateTime;
 use sqlx::prelude::FromRow;
 use teloxide::types::ChatId;
 
+use crate::bot::replace_all;
+
 pub static DEFAULT_NICKNAME: LazyLock<String> = LazyLock::new(|| "N/A".to_string());
 
 pub fn timestamp_to_string(timestamp: i64) -> String {
@@ -68,11 +70,11 @@ impl std::fmt::Display for Player {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} {} {} {} {}",
+            "{} *{}* `{}` {} {}",
             self.ei,
-            self.name(),
+            replace_all(self.name()),
             self.user,
-            timestamp_to_string(self.last_fetch),
+            replace_all(&timestamp_to_string(self.last_fetch)),
             return_tf_emoji(!self.disabled)
         )
     }
