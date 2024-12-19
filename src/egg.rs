@@ -120,6 +120,9 @@ pub mod types {
         pub fn land(&self) -> i64 {
             self.duration() + self.launched()
         }
+        pub fn is_landed(&self) -> bool {
+            kstool::time::get_current_second() as i64 > self.land()
+        }
 
         pub fn ship_friendly_name(ship: super::proto::mission_info::Spaceship) -> &'static str {
             use super::proto::mission_info::Spaceship;
@@ -166,20 +169,6 @@ pub mod types {
             }
         }
     }
-
-    #[derive(Clone, Debug)]
-    pub struct Username(String);
-    impl From<&super::proto::Backup> for Username {
-        fn from(value: &super::proto::Backup) -> Self {
-            Self(value.user_name().into())
-        }
-    }
-
-    impl From<Username> for String {
-        fn from(value: Username) -> Self {
-            value.0
-        }
-    }
 }
 
 pub mod monitor {
@@ -191,7 +180,7 @@ pub mod monitor {
     use itertools::Itertools;
     use kstool_helper_generator::Helper;
     use reqwest::Client;
-    use tap::TapOptional;
+    use tap::{Tap, TapOptional};
     use teloxide::prelude::Requester;
     use tokio::{task::JoinHandle, time::interval};
 
@@ -200,7 +189,6 @@ pub mod monitor {
     use crate::{bot::BotType, database::DatabaseHelper, types::Player, FETCH_PERIOD};
 
     use super::functions::{get_missions, request};
-    use super::types::Username;
 
     pub static LAST_QUERY: LazyLock<AtomicU64> = LazyLock::new(|| AtomicU64::new(0));
 
@@ -287,12 +275,37 @@ pub mod monitor {
             Ok(())
         }
 
+        async fn check_username(
+            user: &Player,
+            database: &DatabaseHelper,
+            backup: &Option<super::proto::Backup>,
+        ) -> anyhow::Result<()> {
+            let Some(username) = backup.as_ref().map(|s| s.user_name().to_string()) else {
+                return Err(anyhow!("Backup is empty"));
+            };
+            match user.nickname() {
+                Some(name) => {
+                    if name.eq(&username) {
+                        database
+                            .player_name_update(user.ei().to_string(), username)
+                            .await;
+                    }
+                }
+                None => {
+                    database
+                        .player_name_update(user.ei().to_string(), username)
+                        .await;
+                }
+            }
+            Ok(())
+        }
+
         async fn handle_each_user(
             client: &Client,
             user: &Player,
             database: &DatabaseHelper,
             bot: &BotType,
-        ) -> anyhow::Result<()> {
+        ) -> anyhow::Result<bool> {
             if database
                 .mission_query_by_player(user.ei().to_string())
                 .await
@@ -300,20 +313,15 @@ pub mod monitor {
                 .into_iter()
                 .filter(|s| !s.notified())
                 .count()
+                .tap(|c| log::debug!("{} {c}", user.ei()))
                 == 3
             {
-                return Ok(());
+                return Ok(false);
             };
 
             let info = request(client, user.ei()).await?;
 
-            if user.nickname().is_none() {
-                if let Some(ref backup) = info.backup {
-                    database
-                        .player_name_update(user.ei().to_string(), Username::from(backup).into())
-                        .await;
-                }
-            }
+            Self::check_username(user, database, &info.backup).await?;
 
             let Some(missions) = get_missions(info) else {
                 return Err(anyhow!("Player {} missions field is missing", user.ei()));
@@ -325,11 +333,15 @@ pub mod monitor {
             let mut pending = Vec::new();
 
             for mission in missions {
-                let mission_record = database
+                if mission.is_landed() {
+                    continue;
+                }
+                if database
                     .mission_single_query(mission.id().to_string())
                     .await
-                    .flatten();
-                if mission_record.is_some() {
+                    .flatten()
+                    .is_some()
+                {
                     continue;
                 }
                 database
@@ -350,7 +362,7 @@ pub mod monitor {
             }
 
             if pending.is_empty() {
-                return Ok(());
+                return Ok(true);
             }
 
             bot.send_message(
@@ -359,7 +371,7 @@ pub mod monitor {
             )
             .await?;
 
-            Ok(())
+            Ok(true)
         }
 
         async fn query(database: DatabaseHelper, bot: BotType) -> anyhow::Result<()> {
@@ -390,9 +402,11 @@ pub mod monitor {
                     .await
                     .inspect_err(|e| log::error!("Remote query user got error: {e:?}"));
 
-                database
-                    .player_update(player.ei().to_string(), ret.is_err())
-                    .await;
+                if ret.is_err() || ret.as_ref().is_ok_and(|x| *x) {
+                    database
+                        .player_update(player.ei().to_string(), ret.is_err())
+                        .await;
+                }
                 if ret.is_err() {
                     bot.send_message(
                         player.chat_id(),
