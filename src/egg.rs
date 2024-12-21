@@ -180,12 +180,13 @@ pub mod monitor {
     use itertools::Itertools;
     use kstool_helper_generator::Helper;
     use reqwest::Client;
-    use tap::{Tap, TapOptional};
+    use tap::TapOptional;
     use teloxide::prelude::Requester;
     use tokio::{task::JoinHandle, time::interval};
 
     use crate::bot::replace_all;
     use crate::types::timestamp_to_string;
+    use crate::CHECK_PERIOD;
     use crate::{bot::BotType, database::DatabaseHelper, types::Player, FETCH_PERIOD};
 
     use super::functions::{get_missions, request};
@@ -218,9 +219,11 @@ pub mod monitor {
             mut helper: MonitorEventReceiver,
             bot: BotType,
         ) -> anyhow::Result<()> {
-            let mut query_timer = interval(Duration::from_secs(FETCH_PERIOD as u64));
+            let mut query_timer = interval(Duration::from_secs(CHECK_PERIOD as u64));
             let mut notify_timer = interval(Duration::from_secs(3));
             let mut clear_timer = interval(Duration::from_secs(43200));
+            clear_timer.reset();
+
             let mut works = Vec::new();
 
             loop {
@@ -252,8 +255,10 @@ pub mod monitor {
                     }
 
                     _ = clear_timer.tick() => {
+                        let before = works.len();
                         let alt = std::mem::take(&mut works);
                         works.extend(alt.into_iter().filter(|s| !s.is_finished()));
+                        log::trace!("Clear {} of {} works", before - works.len(), before);
                     }
                 }
             }
@@ -278,25 +283,26 @@ pub mod monitor {
         async fn check_username(
             user: &Player,
             database: &DatabaseHelper,
+            bot: &BotType,
             backup: &Option<super::proto::Backup>,
         ) -> anyhow::Result<()> {
             let Some(username) = backup.as_ref().map(|s| s.user_name().to_string()) else {
                 return Err(anyhow!("Backup is empty"));
             };
-            match user.nickname() {
-                Some(name) => {
-                    if name.eq(&username) {
-                        database
-                            .player_name_update(user.ei().to_string(), username)
-                            .await;
-                    }
-                }
-                None => {
-                    database
-                        .player_name_update(user.ei().to_string(), username)
-                        .await;
-                }
+
+            if user.nickname().is_none_or(|name| !name.eq(&username)) {
+                let msg = format!(
+                    "User _{}_ changed their name from _{}_ to _{}_",
+                    user.ei(),
+                    replace_all(&user.name()),
+                    replace_all(&username)
+                );
+                database
+                    .player_name_update(user.ei().to_string(), username)
+                    .await;
+                bot.send_message(user.chat_id(), msg).await?;
             }
+
             Ok(())
         }
 
@@ -313,7 +319,6 @@ pub mod monitor {
                 .into_iter()
                 .filter(|s| !s.notified())
                 .count()
-                .tap(|c| log::debug!("{} {c}", user.ei()))
                 == 3
             {
                 return Ok(false);
@@ -321,7 +326,7 @@ pub mod monitor {
 
             let info = request(client, user.ei()).await?;
 
-            Self::check_username(user, database, &info.backup).await?;
+            Self::check_username(user, database, bot, &info.backup).await?;
 
             let Some(missions) = get_missions(info) else {
                 return Err(anyhow!("Player {} missions field is missing", user.ei()));
@@ -380,10 +385,7 @@ pub mod monitor {
                 std::sync::atomic::Ordering::Relaxed,
             );
 
-            let client = Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()
-                .unwrap();
+            let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
 
             for player in database
                 .player_query(None)
@@ -402,7 +404,7 @@ pub mod monitor {
                     .await
                     .inspect_err(|e| log::error!("Remote query user got error: {e:?}"));
 
-                if ret.is_err() || ret.as_ref().is_ok_and(|x| *x) {
+                if *ret.as_ref().unwrap_or(&true) {
                     database
                         .player_update(player.ei().to_string(), ret.is_err())
                         .await;
@@ -410,7 +412,7 @@ pub mod monitor {
                 if ret.is_err() {
                     bot.send_message(
                         player.chat_id(),
-                        "Remote query got error, disable this account",
+                        format!("Remote query got error, disable {}", player.ei()),
                     )
                     .await
                     .inspect_err(|e| log::error!("Send message error: {e:?}"))
