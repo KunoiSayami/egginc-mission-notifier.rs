@@ -36,19 +36,18 @@ async fn async_main(config_file: &String) -> anyhow::Result<()> {
 
 fn enable_log(verbose: u8) {
     let mut builder = env_logger::Builder::from_default_env();
-
     if verbose < 3 {
-        builder.filter_module("sqlx", log::LevelFilter::Warn);
-    }
-    if verbose < 2 {
         builder
             .filter_module("tracing", log::LevelFilter::Warn)
             .filter_module("hyper", log::LevelFilter::Warn)
             .filter_module("reqwest", log::LevelFilter::Warn);
     }
 
-    if verbose < 1 {
+    if verbose < 2 {
         builder.filter_module("teloxide", log::LevelFilter::Debug);
+    }
+    if verbose < 1 {
+        builder.filter_module("sqlx", log::LevelFilter::Warn);
     }
     builder.init();
 }

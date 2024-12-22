@@ -118,7 +118,7 @@ mod admin {
         match command {
             Ok(AdminCommand::Query { ei }) => {
                 if let Some(ei) = ei {
-                    arg.database().player_timestamp_reset(ei).await;
+                    arg.database().account_timestamp_reset(ei).await;
                 }
                 arg.monitor().new_client().await;
                 bot.send_message(msg.chat.id, "Request sent").await
@@ -129,12 +129,12 @@ mod admin {
             } */
             Ok(AdminCommand::ResetNotify { ei, limit }) => {
                 arg.database()
-                    .player_mission_reset(ei, limit as usize)
+                    .account_mission_reset(ei, limit as usize)
                     .await;
                 bot.send_message(msg.chat.id, "Mission reset").await
             }
             Ok(AdminCommand::User { ei, enabled }) => {
-                arg.database().player_status_reset(ei, !enabled).await;
+                arg.database().account_status_reset(ei, !enabled).await;
                 bot.send_message(
                     msg.chat.id,
                     format!("User {}", if enabled { "enabled" } else { "disabled" }),
@@ -259,7 +259,7 @@ pub async fn handle_add_command(
     if !arg.check_admin(msg.chat.id)
         && arg
             .database()
-            .player_query(Some(msg.chat.id.0))
+            .account_query(Some(msg.chat.id.0))
             .await
             .ok_or_else(|| anyhow!("Query player for user not response"))?
             .len()
@@ -277,7 +277,7 @@ pub async fn handle_add_command(
 
     let result = arg
         .database()
-        .player_add(ei.clone(), msg.chat.id.0)
+        .account_add(ei.clone(), msg.chat.id.0)
         .await
         .unwrap_or(false);
 
@@ -304,17 +304,21 @@ async fn handle_delete_command(
     msg: Message,
     ei: String,
 ) -> anyhow::Result<()> {
-    let Some(player) = arg.database().player_query_ei(ei.clone()).await.flatten() else {
+    let Some(_account) = arg.database().account_query_ei(ei.clone()).await.flatten() else {
+        bot.send_message(msg.chat.id, "User not found").await?;
+        return Ok(());
+    };
+    let Some(account_map) = arg.database().account_query_users(ei.clone()).await else {
         bot.send_message(msg.chat.id, "User not found").await?;
         return Ok(());
     };
 
-    if player.user() != msg.chat.id.0 || !arg.check_admin(msg.chat.id) {
+    if !account_map.users().iter().any(|x| x == &msg.chat.id.0) || !arg.check_admin(msg.chat.id) {
         bot.send_message(msg.chat.id, "Permission denied").await?;
         return Ok(());
     }
 
-    arg.database().player_remove(ei).await;
+    arg.database().user_remove_account(msg.chat.id.0, ei).await;
 
     bot.send_message(msg.chat.id, "Deleted").await?;
 
@@ -345,9 +349,9 @@ async fn handle_list_command(
 ) -> anyhow::Result<()> {
     let Some(ret) =
         (if arg.check_admin(msg.chat.id) && msg.text().is_some_and(|text| text.contains("all")) {
-            arg.database().player_query(None).await
+            arg.database().account_query(None).await
         } else {
-            arg.database().player_query(Some(msg.chat.id.0)).await
+            arg.database().account_query(Some(msg.chat.id.0)).await
         })
     else {
         log::warn!("Query result is None");

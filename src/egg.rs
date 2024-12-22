@@ -180,14 +180,14 @@ pub mod monitor {
     use itertools::Itertools;
     use kstool_helper_generator::Helper;
     use reqwest::Client;
-    use tap::TapOptional;
+    use tap::TapOptional as _;
     use teloxide::prelude::Requester;
     use tokio::{task::JoinHandle, time::interval};
 
     use crate::bot::replace_all;
-    use crate::types::timestamp_to_string;
+    use crate::types::{timestamp_to_string, AccountMap};
     use crate::CHECK_PERIOD;
-    use crate::{bot::BotType, database::DatabaseHelper, types::Player, FETCH_PERIOD};
+    use crate::{bot::BotType, database::DatabaseHelper, types::Account, FETCH_PERIOD};
 
     use super::functions::{get_missions, request};
 
@@ -281,8 +281,9 @@ pub mod monitor {
         }
 
         async fn check_username(
-            user: &Player,
+            account: &Account,
             database: &DatabaseHelper,
+            account_map: &AccountMap,
             bot: &BotType,
             backup: &Option<super::proto::Backup>,
         ) -> anyhow::Result<()> {
@@ -290,30 +291,32 @@ pub mod monitor {
                 return Err(anyhow!("Backup is empty"));
             };
 
-            if user.nickname().is_none_or(|name| !name.eq(&username)) {
+            if account.nickname().is_none_or(|name| !name.eq(&username)) {
                 let msg = format!(
                     "User _{}_ changed their name from _{}_ to _{}_",
-                    user.ei(),
-                    replace_all(&user.name()),
+                    account.ei(),
+                    replace_all(&account.name()),
                     replace_all(&username)
                 );
                 database
-                    .player_name_update(user.ei().to_string(), username)
+                    .account_name_update(account.ei().to_string(), username)
                     .await;
-                bot.send_message(user.chat_id(), msg).await?;
+                for chat in account_map.chat_ids() {
+                    bot.send_message(chat, &msg).await?;
+                }
             }
 
             Ok(())
         }
 
-        async fn handle_each_user(
+        async fn handle_each_account(
             client: &Client,
-            user: &Player,
+            account: &Account,
             database: &DatabaseHelper,
             bot: &BotType,
         ) -> anyhow::Result<bool> {
             if database
-                .mission_query_by_player(user.ei().to_string())
+                .mission_query_by_account(account.ei().to_string())
                 .await
                 .ok_or_else(|| anyhow!("Query player mission failed"))?
                 .into_iter()
@@ -324,16 +327,22 @@ pub mod monitor {
                 return Ok(false);
             };
 
-            let info = request(client, user.ei()).await?;
+            let Some(account_map) = database.account_query_users(account.ei().to_string()).await
+            else {
+                log::error!("Account map is empty, skip {}", account.ei());
+                return Ok(false);
+            };
 
-            Self::check_username(user, database, bot, &info.backup).await?;
+            let info = request(client, account.ei()).await?;
+
+            Self::check_username(account, database, &account_map, bot, &info.backup).await?;
 
             let Some(missions) = get_missions(info) else {
-                return Err(anyhow!("Player {} missions field is missing", user.ei()));
+                return Err(anyhow!("Player {} missions field is missing", account.ei()));
                 //bot.send_message(user.user().into(), "Query mission failure");
             };
 
-            log::trace!("{}({}) missions {missions:?}", user.name(), user.ei());
+            log::trace!("{}({}) missions {missions:?}", account.name(), account.ei());
 
             let mut pending = Vec::new();
 
@@ -353,7 +362,7 @@ pub mod monitor {
                     .mission_add(
                         mission.id().to_string(),
                         mission.name().to_string(),
-                        user.ei().to_string(),
+                        account.ei().to_string(),
                         mission.land(),
                     )
                     .await;
@@ -370,11 +379,13 @@ pub mod monitor {
                 return Ok(true);
             }
 
-            bot.send_message(
-                user.chat_id(),
-                &format!("*{}*:\n{}", replace_all(user.name()), pending.join("\n")),
-            )
-            .await?;
+            for user in account_map.chat_ids() {
+                bot.send_message(
+                    user,
+                    &format!("*{}*:\n{}", replace_all(account.name()), pending.join("\n")),
+                )
+                .await?;
+            }
 
             Ok(true)
         }
@@ -387,36 +398,45 @@ pub mod monitor {
 
             let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
 
-            for player in database
-                .player_query(None)
+            for account in database
+                .account_query(None)
                 .await
-                .ok_or_else(|| anyhow!("Query database players failure"))?
+                .ok_or_else(|| anyhow!("Query database accounts failure"))?
             {
                 //log::debug!("Start query user {}", player.ei());
-                if player.disabled()
-                    || kstool::time::get_current_second() as i64 - player.last_fetch()
+                if account.disabled()
+                    || kstool::time::get_current_second() as i64 - account.last_fetch()
                         < FETCH_PERIOD
                 {
-                    //log::debug!("Skip user {}", player.ei());
+                    //log::debug!("Skip user {}", account.ei());
                     continue;
                 }
-                let ret = Self::handle_each_user(&client, &player, &database, &bot)
+                let ret = Self::handle_each_account(&client, &account, &database, &bot)
                     .await
                     .inspect_err(|e| log::error!("Remote query user got error: {e:?}"));
 
                 if *ret.as_ref().unwrap_or(&true) {
                     database
-                        .player_update(player.ei().to_string(), ret.is_err())
+                        .account_update(account.ei().to_string(), ret.is_err())
                         .await;
                 }
                 if ret.is_err() {
-                    bot.send_message(
-                        player.chat_id(),
-                        format!("Remote query got error, disable {}", player.ei()),
-                    )
-                    .await
-                    .inspect_err(|e| log::error!("Send message error: {e:?}"))
-                    .ok();
+                    for user in database
+                        .account_query_users(account.ei().to_string())
+                        .await
+                        .ok_or_else(|| anyhow!("Unable query database account map"))?
+                        .chat_ids()
+                    {
+                        bot.send_message(
+                            user,
+                            format!("Remote query got error, disable {}", account.ei()),
+                        )
+                        .await
+                        .inspect_err(|e| {
+                            log::error!("Send message to user {} error: {e:?}", user.0)
+                        })
+                        .ok();
+                    }
                 }
                 //log::debug!("Query {} finished", player.ei());
             }
@@ -440,28 +460,35 @@ pub mod monitor {
             let mut msg_map = HashMap::new();
 
             for (ei, missions) in pending {
-                let Some(player) = database
-                    .player_query_ei(ei.to_string())
+                let Some(account) = database
+                    .account_query_ei(ei.to_string())
                     .await
                     .tap_none(|| log::error!("Query database players {ei} error"))
                     .flatten()
                 else {
                     continue;
                 };
+
+                let Some(account_map) = database
+                    .account_query_users(ei.to_string())
+                    .await
+                    .tap_none(|| log::error!("Query database map {ei} error"))
+                else {
+                    continue;
+                };
                 for spaceship in &missions {
                     database.mission_updated(spaceship.id().to_string()).await;
                 }
-                msg_map
-                    .entry(player.chat_id())
-                    .or_insert_with(Vec::new)
-                    .push(format!(
+                for user in account_map.chat_ids() {
+                    msg_map.entry(user).or_insert_with(Vec::new).push(format!(
                         "*{}*:\n{}",
-                        replace_all(player.name()),
+                        replace_all(account.name()),
                         missions
-                            .into_iter()
+                            .iter()
                             .map(|s| format!("__{}__ returned\\!", s.name()))
                             .join("\n"),
                     ));
+                }
             }
 
             for (player, msg) in msg_map {
