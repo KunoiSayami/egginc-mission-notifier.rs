@@ -5,14 +5,29 @@ use log::error;
 use sqlx::{sqlite::SqliteConnectOptions, Connection, SqliteConnection};
 
 pub mod v1 {
+    pub const VERSION: &str = "1";
+}
+
+pub mod v2 {
+    use std::collections::HashMap;
+
+    use futures_util::StreamExt;
+    use log::info;
+    use sqlx::SqliteConnection;
+
     pub const CREATE_STATEMENT: &str = r#"
-        CREATE TABLE "player" (
+        CREATE TABLE "account" (
             "ei"        TEXT NOT NULL,
-            "user"      INTEGER NOT NULL,
             "nickname"  TEXT,
-            "last_fetch"        INTEGER NOT NULL DEFAULT 0,
+            "last_fetch"    INTEGER NOT NULL DEFAULT 0,
             "disabled"  INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY("ei")
+        );
+
+        CRATE TABLE "user" (
+            "id" INTEGER NOT NULL,
+            "link" TEXT NOT NULL,
+            PRIMARY KEY("id")
         );
 
         CREATE TABLE "meta" (
@@ -31,7 +46,66 @@ pub mod v1 {
         );
     "#;
 
-    pub const VERSION: &str = "1";
+    const MERGE_STATEMENT_STAGE: &str = r#"
+        CREATE TABLE "account" (
+            "ei"        TEXT NOT NULL,
+            "nickname"  TEXT,
+            "last_fetch"    INTEGER NOT NULL DEFAULT 0,
+            "disabled"  INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY("ei")
+        );
+
+        CREATE TABLE "user" (
+            "id" INTEGER NOT NULL,
+            "accounts" TEXT NOT NULL,
+            PRIMARY KEY("id")
+        );
+
+        INSERT INTO "account" ("disabled", "ei", "last_fetch", "nickname") SELECT "disabled", "ei", "last_fetch", "nickname" FROM "account";
+    "#;
+
+    pub const VERSION: &str = "2";
+
+    pub async fn merge_v1(conn: &mut SqliteConnection) -> sqlx::Result<()> {
+        info!("Performing database prepare stage");
+        sqlx::raw_sql(MERGE_STATEMENT_STAGE)
+            .execute(&mut *conn)
+            .await?;
+
+        let mut m = HashMap::new();
+        info!("Query `players', merge into `account'");
+
+        let mut querier =
+            sqlx::query_as::<_, (String, i64)>(r#"SELECT "ei", "user" FROM "player""#)
+                .fetch(&mut *conn);
+
+        while let Some((ei, user)) = querier.next().await.transpose()? {
+            m.entry(user).or_insert_with(Vec::new).push(ei);
+        }
+
+        drop(querier);
+
+        info!("Merge users, total {} user", m.len());
+
+        for (user, eis) in m {
+            sqlx::query(r#"INSERT INTO "user" VALUES (?, ?)"#)
+                .bind(user)
+                .bind(eis.join("\n"))
+                .execute(&mut *conn)
+                .await?;
+        }
+        info!("Clean old database structure");
+
+        sqlx::raw_sql(
+            r#"DROP TABLE "player";
+            UPDATE "meta" SET "value" = '2' WHERE "key" = 'version';"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+        info!("Merge completed");
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -53,14 +127,14 @@ pub trait DatabaseCheckExt {
         )
     }
 
-    /* async fn check_database_version(&mut self) -> sqlx::Result<Option<String>> {
+    async fn check_database_version(&mut self) -> sqlx::Result<Option<String>> {
         Ok(
             sqlx::query_as::<_, (String,)>(r#"SELECT "value" FROM "meta" WHERE "key" = 'version'"#)
                 .fetch_optional(self.conn_())
                 .await?
                 .map(|(x,)| x),
         )
-    } */
+    }
 
     async fn insert_database_version(&mut self) -> sqlx::Result<()> {
         sqlx::query(r#"INSERT INTO "meta" VALUES ("version", ?)"#)
@@ -95,6 +169,18 @@ impl Database {
         if !self.check_database_table().await? {
             self.create_db().await?;
             self.insert_database_version().await?;
+        }
+        if let Some(version) = self.check_database_version().await? {
+            match version.as_str() {
+                v1::VERSION => {
+                    log::info!("Find old database, merge it");
+                    v2::merge_v1(&mut self.conn).await?;
+                }
+                current::VERSION => {}
+                _ => {
+                    panic!("Unknown database version: {version}, exit")
+                }
+            }
         }
         Ok(true)
     }
@@ -456,6 +542,6 @@ impl DatabaseHandle {
 }
 
 pub type DBResult<T> = sqlx::Result<T>;
-pub use v1 as current;
+pub use v2 as current;
 
 use crate::types::{Player, SpaceShip};
