@@ -18,6 +18,7 @@ use crate::{
     database::DatabaseHelper,
     egg::monitor::{MonitorHelper, LAST_QUERY},
     types::{return_tf_emoji, timestamp_to_string},
+    CHECK_PERIOD, FETCH_PERIOD,
 };
 
 pub type BotType = DefaultParseMode<Bot>;
@@ -372,11 +373,13 @@ async fn handle_ping(bot: BotType, msg: Message, arg: Arc<NecessaryArg>) -> anyh
     bot.send_message(
         msg.chat.id,
         &format!(
-            "Chat id: `{id}`\nLast query: `{last_query}`\nIs admin: {is_admin}\nVersion: {version}",
+            "Chat id: `{id}`\nLast system query: `{last_query}`\nCheck period: {check_period}s\nFetch period: {fetch_period}s\nIs admin: {is_admin}\nVersion: `{version}`",
             id = msg.chat.id.0,
             last_query = replace_all(&timestamp_to_string(
                 LAST_QUERY.load(std::sync::atomic::Ordering::Relaxed) as i64
             )),
+            check_period = CHECK_PERIOD.get().unwrap(),
+            fetch_period = FETCH_PERIOD.get().unwrap(),
             is_admin = arg.check_admin(msg.chat.id),
             version = replace_all(env!("CARGO_PKG_VERSION"))
         ),

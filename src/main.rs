@@ -4,14 +4,16 @@ mod database;
 mod egg;
 mod types;
 
+use std::sync::OnceLock;
+
 use bot::{bot, bot_run};
 use clap::arg;
 use config::Config;
 use database::DatabaseHandle;
 use egg::monitor::Monitor;
 
-const FETCH_PERIOD: i64 = 1800;
-const CHECK_PERIOD: i64 = 240;
+static FETCH_PERIOD: OnceLock<i64> = OnceLock::new();
+static CHECK_PERIOD: OnceLock<i64> = OnceLock::new();
 
 //const STATIC_DATA: &[u8] = include_bytes!("../out1.data");
 
@@ -56,13 +58,32 @@ fn main() -> anyhow::Result<()> {
     let matches = clap::command!()
         .args(&[
             arg!([CONFIG] "Configure file to read").default_value("config.toml"),
-            arg!(-v --verbose ... "More verbose output"),
+            arg!(--"check-period" <second> "Override check period")
+                .default_value("240")
+                .value_parser(clap::value_parser!(i64)),
+            arg!(--"fetch-period" <second> "Override minium fetch period per-use (second)")
+                .long_help("Default set to 1800, set to long can reduce game server pressure")
+                .default_value("1800")
+                .value_parser(clap::value_parser!(i64)),
+            arg!(-v --verbose ... "More verbose log output"),
         ])
         .get_matches();
 
     enable_log(matches.get_count("verbose"));
 
-    log::info!("Version: {}", env!("CARGO_PKG_VERSION"));
+    FETCH_PERIOD
+        .set(*matches.get_one::<i64>("fetch-period").unwrap())
+        .unwrap();
+    CHECK_PERIOD
+        .set(*matches.get_one::<i64>("check-period").unwrap())
+        .unwrap();
+
+    log::info!(
+        "Version: {}, fetch period: {}, check period: {}",
+        env!("CARGO_PKG_VERSION"),
+        FETCH_PERIOD.get().unwrap(),
+        CHECK_PERIOD.get().unwrap()
+    );
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

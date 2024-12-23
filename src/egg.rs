@@ -208,7 +208,8 @@ pub mod monitor {
             mut helper: MonitorEventReceiver,
             bot: BotType,
         ) -> anyhow::Result<()> {
-            let mut query_timer = interval(Duration::from_secs(CHECK_PERIOD as u64));
+            let mut query_timer =
+                interval(Duration::from_secs(*(CHECK_PERIOD.get().unwrap()) as u64));
             let mut notify_timer = interval(Duration::from_secs(3));
             let mut clear_timer = interval(Duration::from_secs(43200));
             clear_timer.reset();
@@ -397,7 +398,7 @@ pub mod monitor {
                 //log::debug!("Start query user {}", player.ei());
                 if account.disabled()
                     || kstool::time::get_current_second() as i64 - account.last_fetch()
-                        < FETCH_PERIOD
+                        < (*FETCH_PERIOD.get().unwrap())
                 {
                     //log::debug!("Skip user {}", account.ei());
                     continue;
