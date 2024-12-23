@@ -476,7 +476,7 @@ pub mod monitor {
                         replace_all(account.name()),
                         missions
                             .iter()
-                            .map(|s| format!("__{}__ returned\\!", s.name()))
+                            .map(|s| format!("__{}__ returned\\!", replace_all(s.name())))
                             .join("\n"),
                     ));
                 }
