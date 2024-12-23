@@ -18,43 +18,6 @@ pub mod v2 {
 
     use crate::types::Account;
 
-    pub const CREATE_STATEMENT: &str = r#"
-        CREATE TABLE "account" (
-            "ei"        TEXT NOT NULL,
-            "nickname"  TEXT,
-            "last_fetch"    INTEGER NOT NULL DEFAULT 0,
-            "disabled"  INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY("ei")
-        );
-
-        CREATE TABLE "user" (
-            "id" INTEGER NOT NULL,
-            "accounts" TEXT NOT NULL,
-            PRIMARY KEY("id")
-        );
-
-        CREATE TABLE "account_map" (
-            "ei" TEXT NOT NULL,
-            "users" TEXT NOT NULL,
-            PRIMARY KEY("ei")
-        );
-
-        CREATE TABLE "meta" (
-            "key"       TEXT NOT NULL,
-            "value"     TEXT,
-            PRIMARY KEY("key")
-        );
-
-        CREATE TABLE "spaceship" (
-            "id"        TEXT NOT NULL,
-            "name"      TEXT NOT NULL,
-            "belong"    TEXT NOT NULL,
-            "land"      INTEGER NOT NULL,
-            "notified" INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY("id")
-        );
-    "#;
-
     const MERGE_STATEMENT_STAGE: &str = r#"
         CREATE TABLE "account" (
             "ei"        TEXT NOT NULL,
@@ -80,7 +43,7 @@ pub mod v2 {
     pub const VERSION: &str = "2";
 
     pub async fn merge_v1(conn: &mut SqliteConnection) -> sqlx::Result<()> {
-        info!("Performing database prepare stage");
+        info!("Performing database prepare stage (v2)");
         sqlx::raw_sql(MERGE_STATEMENT_STAGE)
             .execute(&mut *conn)
             .await?;
@@ -138,6 +101,112 @@ pub mod v2 {
         sqlx::raw_sql(
             r#"DROP TABLE "player";
             UPDATE "meta" SET "value" = '2' WHERE "key" = 'version';"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+        info!("Merge completed");
+
+        Ok(())
+    }
+}
+
+pub mod v3 {
+    use log::info;
+    use sqlx::SqliteConnection;
+
+    pub const VERSION: &str = "3";
+    pub const CREATE_STATEMENT: &str = r#"
+        CREATE TABLE "account" (
+            "ei"        TEXT NOT NULL,
+            "nickname"  TEXT,
+            "last_fetch"    INTEGER NOT NULL DEFAULT 0,
+            "disabled"  INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY("ei")
+        );
+
+        CREATE TABLE "user" (
+            "id" INTEGER NOT NULL,
+            "accounts" TEXT NOT NULL,
+            PRIMARY KEY("id")
+        );
+
+        CREATE TABLE "account_map" (
+            "ei" TEXT NOT NULL,
+            "users" TEXT NOT NULL,
+            PRIMARY KEY("ei")
+        );
+
+        CREATE TABLE "meta" (
+            "key"       TEXT NOT NULL,
+            "value"     TEXT,
+            PRIMARY KEY("key")
+        );
+
+        CREATE TABLE "spaceship" (
+            "id"        TEXT NOT NULL,
+            "name"      TEXT NOT NULL,
+            "duration_type"  INTEGER NOT NULL,
+            "belong"    TEXT NOT NULL,
+            "land"      INTEGER NOT NULL,
+            "notified" INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY("id")
+        );
+    "#;
+
+    const MERGE_STATEMENT_STAGE: &str = r#"
+        CREATE TABLE "spaceship_1" (
+            "id"        TEXT NOT NULL,
+            "name"      TEXT NOT NULL,
+            "duration_type"  INTEGER NOT NULL,
+            "belong"    TEXT NOT NULL,
+            "land"      INTEGER NOT NULL,
+            "notified" INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY("id")
+        );
+    "#;
+
+    fn convert_duration(s: &str) -> i64 {
+        let dur = s.to_lowercase();
+        match dur.as_str() {
+            "epic" => 2,
+            "long" => 1,
+            "short" => 0,
+            "tutorial" => 3,
+            _ => 4,
+        }
+    }
+
+    pub async fn merge_v2(conn: &mut SqliteConnection) -> sqlx::Result<()> {
+        info!("Performing database prepare stage (v3)");
+        sqlx::raw_sql(MERGE_STATEMENT_STAGE)
+            .execute(&mut *conn)
+            .await?;
+        let spaceships = sqlx::query_as::<_, (String, String, String, i64, i64)>(
+            r#"SELECT "id", "name", "belong", "land", "notified" FROM "spaceship""#,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+
+        info!("Merge spaceships, total {} spaceships", spaceships.len());
+        for (id, name, belong, land, notified) in spaceships {
+            let (duration, name) = name.split_once(' ').unwrap();
+            sqlx::query(r#"INSERT INTO "spaceship_1" VALUES (?, ?, ?, ?, ?, ?)"#)
+                .bind(id)
+                .bind(name)
+                .bind(convert_duration(duration))
+                .bind(belong)
+                .bind(land)
+                .bind(notified)
+                .execute(&mut *conn)
+                .await?;
+        }
+
+        info!("Clean old database structure");
+
+        sqlx::raw_sql(
+            r#"DROP TABLE "spaceship";
+            ALTER TABLE "spaceship_1" RENAME TO "spaceship";
+            UPDATE "meta" SET "value" = '3' WHERE "key" = 'version';"#,
         )
         .execute(&mut *conn)
         .await?;
@@ -209,15 +278,19 @@ impl Database {
             self.create_db().await?;
             self.insert_database_version().await?;
         }
-        if let Some(version) = self.check_database_version().await? {
-            match version.as_str() {
-                v1::VERSION => {
-                    log::info!("Find old database, merge it");
-                    v2::merge_v1(&mut self.conn).await?;
-                }
-                current::VERSION => {}
-                _ => {
-                    panic!("Unknown database version: {version}, exit")
+        loop {
+            if let Some(version) = self.check_database_version().await? {
+                match version.as_str() {
+                    v1::VERSION => {
+                        v2::merge_v1(&mut self.conn).await?;
+                    }
+                    v2::VERSION => {
+                        v3::merge_v2(&mut self.conn).await?;
+                    }
+                    current::VERSION => break,
+                    _ => {
+                        panic!("Unknown database version: {version}, exit")
+                    }
                 }
             }
         }
@@ -412,12 +485,14 @@ impl Database {
         &mut self,
         id: String,
         name: String,
+        duration: i64,
         belong: String,
         land: i64,
     ) -> DBResult<()> {
-        sqlx::query(r#"INSERT INTO "spaceship" VALUES (?, ?, ?, ?, 0)"#)
+        sqlx::query(r#"INSERT INTO "spaceship" VALUES (?, ?, ?, ?, ?, 0)"#)
             .bind(id)
             .bind(name)
+            .bind(duration)
             .bind(belong)
             .bind(land)
             .execute(&mut self.conn)
@@ -526,6 +601,7 @@ pub enum DatabaseEvent {
     MissionAdd {
         id: String,
         name: String,
+        duration_type: i64,
         belong: String,
         land: i64
     },
@@ -597,10 +673,13 @@ impl DatabaseHandle {
             DatabaseEvent::MissionAdd {
                 belong,
                 name,
+                duration_type,
                 id,
                 land,
             } => {
-                database.insert_spaceship(id, name, belong, land).await?;
+                database
+                    .insert_spaceship(id, name, duration_type, belong, land)
+                    .await?;
             }
             DatabaseEvent::MissionQuery(sender) => {
                 let r = database
@@ -695,6 +774,6 @@ impl DatabaseHandle {
 }
 
 pub type DBResult<T> = sqlx::Result<T>;
-pub use v2 as current;
+pub use v3 as current;
 
 use crate::types::{Account, AccountMap, SpaceShip, User};

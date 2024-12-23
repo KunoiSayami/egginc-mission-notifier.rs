@@ -208,6 +208,7 @@ impl std::fmt::Display for Account {
 pub struct SpaceShip {
     id: String,
     name: String,
+    duration_type: i64,
     belong: String,
     land: i64,
     notified: bool,
@@ -221,6 +222,28 @@ impl SpaceShip {
     pub fn land(&self) -> i64 {
         self.land
     }
+
+    pub fn duration_type(&self) -> &str {
+        Self::duration_type_to_str(self.duration_type)
+    }
+
+    pub fn duration_type_to_str(duration_type: i64) -> &'static str {
+        match duration_type {
+            0 => "Short",
+            1 => "Long",
+            2 => "Epic",
+            3 => "Tutorial",
+            _ => "Unknown",
+        }
+    }
+
+    /* pub fn calc_time(&self, input: &DateTime<chrono::Utc>) -> String {
+        if self.notified {
+            return Default::default();
+        }
+        let time = DateTime::from_timestamp(self.land, 0).unwrap();
+        format!("{:?}", time - input)
+    } */
 
     pub fn notified(&self) -> bool {
         self.notified

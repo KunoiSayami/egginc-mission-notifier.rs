@@ -447,12 +447,21 @@ async fn handle_missions_command(
                 replace_all(player.name()),
                 spaceships
                     .into_iter()
-                    .map(|s| format!(
-                        "{} {} {}",
-                        replace_all(s.name()),
-                        replace_all(&timestamp_to_string(s.land())),
-                        return_tf_emoji(s.notified())
-                    ))
+                    .map(|s| {
+                        /* let delta = s.calc_time(&msg.date);
+                        let delta = if delta.is_empty() {
+                            delta
+                        } else {
+                            format!("{} ", delta)
+                        }; */
+                        format!(
+                            "{} \\({}\\) {} {}",
+                            replace_all(s.name()),
+                            s.duration_type(),
+                            replace_all(&timestamp_to_string(s.land())),
+                            return_tf_emoji(s.notified())
+                        )
+                    })
                     .join("\n")
             )
         })

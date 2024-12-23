@@ -100,6 +100,7 @@ pub mod types {
     pub struct SpaceShipInfo {
         name: String,
         id: String,
+        duration_type: i64,
         duration: i64,
         launched: i64,
     }
@@ -113,6 +114,9 @@ pub mod types {
         }
         pub fn duration(&self) -> i64 {
             self.duration
+        }
+        pub fn duration_type(&self) -> i64 {
+            self.duration_type
         }
         pub fn launched(&self) -> i64 {
             self.launched
@@ -141,29 +145,14 @@ pub mod types {
                 Spaceship::Atreggies => "Atreggies Henliner",
             }
         }
-
-        pub fn duration_friendly_name(
-            duration: super::proto::mission_info::DurationType,
-        ) -> &'static str {
-            use super::proto::mission_info::DurationType;
-            match duration {
-                DurationType::Short => "Short",
-                DurationType::Long => "Long",
-                DurationType::Epic => "Epic",
-                DurationType::Tutorial => "Tutorial",
-            }
-        }
     }
 
     impl From<super::proto::MissionInfo> for SpaceShipInfo {
         fn from(value: super::proto::MissionInfo) -> Self {
             Self {
-                name: format!(
-                    "{} {}",
-                    Self::duration_friendly_name(value.duration_type()),
-                    Self::ship_friendly_name(value.ship())
-                ),
+                name: Self::ship_friendly_name(value.ship()).to_string(),
                 id: value.identifier().to_string(),
+                duration_type: value.duration_type() as i64,
                 duration: value.duration_seconds() as i64,
                 launched: value.start_time_derived() as i64,
             }
@@ -185,7 +174,7 @@ pub mod monitor {
     use tokio::{task::JoinHandle, time::interval};
 
     use crate::bot::replace_all;
-    use crate::types::{timestamp_to_string, AccountMap};
+    use crate::types::{timestamp_to_string, AccountMap, SpaceShip};
     use crate::CHECK_PERIOD;
     use crate::{bot::BotType, database::DatabaseHelper, types::Account, FETCH_PERIOD};
 
@@ -362,13 +351,15 @@ pub mod monitor {
                     .mission_add(
                         mission.id().to_string(),
                         mission.name().to_string(),
+                        mission.duration_type(),
                         account.ei().to_string(),
                         mission.land(),
                     )
                     .await;
                 pending.push(format!(
-                    "Found new spaceship: {} \\(_{}_\\), launch time: {}, land time: {}",
+                    "Found new spaceship: {} \\[{}\\] \\(_{}_\\), launch time: {}, land time: {}",
                     replace_all(mission.name()),
+                    SpaceShip::duration_type_to_str(mission.duration_type()),
                     replace_all(mission.id()),
                     replace_all(&timestamp_to_string(mission.launched())),
                     replace_all(&timestamp_to_string(mission.land()))
