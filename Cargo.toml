@@ -1,6 +1,6 @@
 [package]
 name = "egginc-mission-notifier"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 
 [dependencies]
@@ -20,7 +20,6 @@ prost = "0.13"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
-    "blocking",
 ] }
 serde = { version = "1", features = ["derive"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }

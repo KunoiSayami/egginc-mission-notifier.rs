@@ -368,7 +368,7 @@ pub mod monitor {
                     .await;
                 pending.push(format!(
                     "Found new spaceship: {} \\(_{}_\\), launch time: {}, land time: {}",
-                    mission.name(),
+                    replace_all(mission.name()),
                     replace_all(mission.id()),
                     replace_all(&timestamp_to_string(mission.launched())),
                     replace_all(&timestamp_to_string(mission.land()))

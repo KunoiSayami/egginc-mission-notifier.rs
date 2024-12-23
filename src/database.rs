@@ -480,7 +480,7 @@ pub enum DatabaseEvent {
     },
 
     #[ret(Vec<User>)]
-    UserQuery,
+    UserQueryAll,
 
     #[ret(Vec<Account>)]
     AccountQuery {
@@ -660,7 +660,7 @@ impl DatabaseHandle {
             DatabaseEvent::AccountStatusReset { ei, disabled } => {
                 database.account_status_reset(&ei, disabled).await?;
             }
-            DatabaseEvent::UserQuery(sender) => {
+            DatabaseEvent::UserQueryAll(sender) => {
                 sender.send(database.query_all_user().await?).ok();
             }
             DatabaseEvent::AccountQueryUsers {

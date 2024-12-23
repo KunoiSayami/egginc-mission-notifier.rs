@@ -11,7 +11,7 @@ use database::DatabaseHandle;
 use egg::monitor::Monitor;
 
 const FETCH_PERIOD: i64 = 1800;
-const CHECK_PERIOD: i64 = 600;
+const CHECK_PERIOD: i64 = 240;
 
 //const STATIC_DATA: &[u8] = include_bytes!("../out1.data");
 

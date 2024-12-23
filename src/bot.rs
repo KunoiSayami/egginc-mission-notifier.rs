@@ -52,6 +52,8 @@ mod admin {
 
     use std::str::FromStr;
 
+    use teloxide::prelude::Requester;
+
     use super::*;
 
     //#[derive(Clone, Debug)]
@@ -59,7 +61,8 @@ mod admin {
     pub(super) enum AdminCommand {
         Query { ei: Option<String> },
         ResetNotify { ei: String, limit: i32 },
-        User { ei: String, enabled: bool },
+        UserToggle { ei: String, enabled: bool },
+        ListUsers,
     }
 
     impl FromStr for AdminCommand {
@@ -88,7 +91,7 @@ mod admin {
                             Err("Invalid format")
                         }
                     }
-                    "enable" | "disable" => Ok(Self::User {
+                    "enable" | "disable" => Ok(Self::UserToggle {
                         ei: second.to_string(),
                         enabled: first.eq("enable"),
                     }),
@@ -97,12 +100,65 @@ mod admin {
             } else {
                 match s {
                     "query" => Ok(Self::Query { ei: None }),
+                    "list" => Ok(Self::ListUsers),
                     /* "test" => Ok(Self::Test), */
                     _ => Err("Invalid command"),
                 }
             }
         }
     }
+
+    async fn handle_admin_sub_command(
+        bot: &BotType,
+        arg: &Arc<NecessaryArg>,
+        msg: &Message,
+        command: AdminCommand,
+    ) -> anyhow::Result<()> {
+        match command {
+            AdminCommand::Query { ei } => {
+                if let Some(ei) = ei {
+                    arg.database().account_timestamp_reset(ei).await;
+                }
+                arg.monitor().new_client().await;
+                bot.send_message(msg.chat.id, "Request sent").await
+            }
+            /* AdminCommand::Test => {
+                bot.send_message(msg.chat.id, "_te*st_\n*te_st*\n__test__")
+                    .await
+            } */
+            AdminCommand::ResetNotify { ei, limit } => {
+                arg.database()
+                    .account_mission_reset(ei, limit as usize)
+                    .await;
+                bot.send_message(msg.chat.id, "Mission reset").await
+            }
+            AdminCommand::UserToggle { ei, enabled } => {
+                arg.database().account_status_reset(ei, !enabled).await;
+                bot.send_message(
+                    msg.chat.id,
+                    format!("User {}", if enabled { "enabled" } else { "disabled" }),
+                )
+                .await
+            }
+            AdminCommand::ListUsers => {
+                let users = arg
+                    .database()
+                    .user_query_all()
+                    .await
+                    .ok_or_else(|| anyhow!("Query all user return none"))?;
+                bot.send_message(
+                    msg.chat.id,
+                    users
+                        .into_iter()
+                        .map(|user| format!("{} {}", user.id(), user.account_to_str()))
+                        .join("\n"),
+                )
+                .await
+            }
+        }?;
+        Ok(())
+    }
+
     pub(crate) async fn handle_admin_command(
         bot: BotType,
         arg: Arc<NecessaryArg>,
@@ -116,33 +172,20 @@ mod admin {
         let command: Result<AdminCommand, &str> = line.parse();
 
         match command {
-            Ok(AdminCommand::Query { ei }) => {
-                if let Some(ei) = ei {
-                    arg.database().account_timestamp_reset(ei).await;
-                }
-                arg.monitor().new_client().await;
-                bot.send_message(msg.chat.id, "Request sent").await
+            Ok(cmd) => {
+                if let Err(e) = handle_admin_sub_command(&bot, &arg, &msg, cmd).await {
+                    bot.send_message(
+                        msg.chat.id,
+                        format!("Handle admin sub command error: {e:?}"),
+                    )
+                    .await?;
+                    return Err(e);
+                };
             }
-            /* Ok(AdminCommand::Test) => {
-                bot.send_message(msg.chat.id, "_te*st_\n*te_st*\n__test__")
-                    .await
-            } */
-            Ok(AdminCommand::ResetNotify { ei, limit }) => {
-                arg.database()
-                    .account_mission_reset(ei, limit as usize)
-                    .await;
-                bot.send_message(msg.chat.id, "Mission reset").await
+            Err(e) => {
+                bot.send_message(msg.chat.id, e).await?;
             }
-            Ok(AdminCommand::User { ei, enabled }) => {
-                arg.database().account_status_reset(ei, !enabled).await;
-                bot.send_message(
-                    msg.chat.id,
-                    format!("User {}", if enabled { "enabled" } else { "disabled" }),
-                )
-                .await
-            }
-            Err(e) => bot.send_message(msg.chat.id, e).await,
-        }?;
+        };
 
         Ok(())
     }
