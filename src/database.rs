@@ -609,7 +609,7 @@ pub enum DatabaseEvent {
     #[ret(Vec<SpaceShip>)]
     MissionQuery,
     #[ret(HashMap<Account, Vec<SpaceShip>>)]
-    MissionQueryByUser { id: i64 },
+    MissionQueryByUser { id: i64, query_recent: bool },
 
     #[ret(Vec<SpaceShip>)]
     MissionQueryByAccount { ei: String },
@@ -713,12 +713,27 @@ impl DatabaseHandle {
             }
             DatabaseEvent::MissionQueryByUser {
                 id,
+                query_recent,
                 __private_sender,
             } => {
+                let current = kstool::time::get_current_second() as i64;
                 let mut map = HashMap::new();
                 for account in database.query_ei(id).await? {
                     let missions = database.query_spaceship_by_ei(account.ei()).await?;
-                    map.insert(account, missions);
+                    map.insert(
+                        account,
+                        if query_recent {
+                            missions
+                                .into_iter()
+                                .filter(|s| {
+                                    let diff = s.land() - current;
+                                    diff > 0 && diff <= 3600 && !s.notified()
+                                })
+                                .collect()
+                        } else {
+                            missions
+                        },
+                    );
                 }
                 __private_sender.send(map).ok();
             }

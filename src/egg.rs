@@ -248,7 +248,7 @@ pub mod monitor {
                         let before = works.len();
                         let alt = std::mem::take(&mut works);
                         works.extend(alt.into_iter().filter(|s| !s.is_finished()));
-                        log::trace!("Clear {} of {} works", before - works.len(), before);
+                        log::trace!("[GC] Clear {} of {} works", before - works.len(), before);
                     }
                 }
             }

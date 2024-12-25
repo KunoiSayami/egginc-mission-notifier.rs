@@ -199,6 +199,7 @@ enum Command {
     Delete { ei: String },
     List,
     Missions { user: String },
+    Recent { user: String },
     Admin { line: String },
     Ping,
 }
@@ -269,11 +270,13 @@ pub async fn bot_run(
                         Command::Delete { ei } => handle_delete_command(bot, arg, msg, ei).await,
                         Command::List => handle_list_command(bot, arg, msg).await,
                         Command::Missions { user } => {
-                            handle_missions_command(bot, arg, msg, user).await
+                            handle_missions_command(bot, arg, msg, user, false).await
+                        }
+                        Command::Recent { user } => {
+                            handle_missions_command(bot, arg, msg, user, true).await
                         }
                         Command::Admin { line } => handle_admin_command(bot, arg, msg, line).await,
                     }
-                    .inspect_err(|e| log::error!("Handle command error: {e:?}"))
                 },
             ),
     );
@@ -423,14 +426,18 @@ async fn handle_missions_command(
     arg: Arc<NecessaryArg>,
     msg: Message,
     user: String,
+    recent: bool,
 ) -> anyhow::Result<()> {
     let Some(ret) = arg
         .database()
-        .mission_query_by_user(if arg.check_admin(msg.chat.id) && !user.is_empty() {
-            user.parse()?
-        } else {
-            msg.chat.id.0
-        })
+        .mission_query_by_user(
+            if arg.check_admin(msg.chat.id) && !user.is_empty() {
+                user.parse()?
+            } else {
+                msg.chat.id.0
+            },
+            recent,
+        )
         .await
     else {
         log::warn!("Query mission result is None");
@@ -444,6 +451,7 @@ async fn handle_missions_command(
 
     let text = ret
         .into_iter()
+        .filter(|(_, spaceships)| !spaceships.is_empty())
         .map(|(player, spaceships)| {
             format!(
                 "*{}*:\n{}",
@@ -469,6 +477,19 @@ async fn handle_missions_command(
             )
         })
         .join("\n\n");
+
+    if text.is_empty() {
+        bot.send_message(
+            msg.chat.id,
+            if recent {
+                "Recent land mission is empty, try use \\/missions command to check all missions\\."
+            } else {
+                "Missions is empty, try again later\\."
+            },
+        )
+        .await?;
+        return Ok(());
+    }
 
     bot.send_message(msg.chat.id, text).await?;
 
