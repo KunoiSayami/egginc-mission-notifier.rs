@@ -44,45 +44,36 @@ pub static USERNAME_CHECKER_RE: LazyLock<regex::Regex> =
 
 pub fn replace_all<'a>(s: &'a str) -> std::borrow::Cow<'a, str> {
     TELEGRAM_ESCAPE_RE.replace_all(s, "\\$1")
-    /* .replace("\\*\\*", "**")
-    .replace("\\_\\_", "__")
-    .replace("\\~\\~", "~~") */
 }
 
 mod admin {
-
-    use std::str::FromStr;
-
     use teloxide::prelude::Requester;
 
     use super::*;
 
-    //#[derive(Clone, Debug)]
-    #[allow(unused)]
-    pub(super) enum AdminCommand {
-        Query { ei: Option<String> },
-        ResetNotify { ei: String, limit: i32 },
-        UserToggle { ei: String, enabled: bool },
+    //#[derive(Clone, Copy, Debug)]
+    pub(super) enum AdminCommand<'a> {
+        Query { ei: Option<&'a str> },
+        ResetNotify { ei: &'a str, limit: i32 },
+        UserToggle { ei: &'a str, enabled: bool },
         ListUsers,
     }
 
-    impl FromStr for AdminCommand {
-        type Err = &'static str;
+    impl<'a> TryFrom<&'a str> for AdminCommand<'a> {
+        type Error = &'static str;
 
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            if s.contains(' ') {
-                let (first, second) = s.split_once(' ').unwrap();
+        fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+            if value.contains(' ') {
+                let (first, second) = value.split_once(' ').unwrap();
 
                 match first {
-                    "query" => Ok(Self::Query {
-                        ei: Some(second.to_string()),
-                    }),
+                    "query" => Ok(Self::Query { ei: Some(second) }),
                     "reset" => {
                         if second.contains(' ') {
                             let (second1, second2) = second.split_once(' ').unwrap();
                             if USERNAME_CHECKER_RE.is_match(second1) {
                                 Ok(Self::ResetNotify {
-                                    ei: second1.to_string(),
+                                    ei: second1,
                                     limit: second2.parse().map_err(|_| "Parse number error")?,
                                 })
                             } else {
@@ -93,13 +84,13 @@ mod admin {
                         }
                     }
                     "enable" | "disable" => Ok(Self::UserToggle {
-                        ei: second.to_string(),
+                        ei: second,
                         enabled: first.eq("enable"),
                     }),
                     _ => Err("Invalid command"),
                 }
             } else {
-                match s {
+                match value {
                     "query" => Ok(Self::Query { ei: None }),
                     "list" => Ok(Self::ListUsers),
                     /* "test" => Ok(Self::Test), */
@@ -109,16 +100,16 @@ mod admin {
         }
     }
 
-    async fn handle_admin_sub_command(
+    async fn handle_admin_sub_command<'a>(
         bot: &BotType,
         arg: &Arc<NecessaryArg>,
         msg: &Message,
-        command: AdminCommand,
+        command: AdminCommand<'a>,
     ) -> anyhow::Result<()> {
         match command {
             AdminCommand::Query { ei } => {
                 if let Some(ei) = ei {
-                    arg.database().account_timestamp_reset(ei).await;
+                    arg.database().account_timestamp_reset(ei.to_string()).await;
                 }
                 arg.monitor().new_client().await;
                 bot.send_message(msg.chat.id, "Request sent").await
@@ -129,15 +120,17 @@ mod admin {
             } */
             AdminCommand::ResetNotify { ei, limit } => {
                 arg.database()
-                    .account_mission_reset(ei, limit as usize)
+                    .account_mission_reset(ei.to_string(), limit as usize)
                     .await;
                 bot.send_message(msg.chat.id, "Mission reset").await
             }
             AdminCommand::UserToggle { ei, enabled } => {
-                arg.database().account_status_reset(ei, !enabled).await;
+                arg.database()
+                    .account_status_reset(ei.to_string(), !enabled)
+                    .await;
                 bot.send_message(
                     msg.chat.id,
-                    format!("User {}", if enabled { "enabled" } else { "disabled" }),
+                    format!("User {ei} {}", if enabled { "enabled" } else { "disabled" }),
                 )
                 .await
             }
@@ -170,9 +163,7 @@ mod admin {
             return Ok(());
         }
 
-        let command: Result<AdminCommand, &str> = line.parse();
-
-        match command {
+        match AdminCommand::try_from(line.as_str()) {
             Ok(cmd) => {
                 if let Err(e) = handle_admin_sub_command(&bot, &arg, &msg, cmd).await {
                     bot.send_message(

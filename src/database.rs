@@ -518,7 +518,7 @@ impl Database {
 
     pub async fn query_spaceship_by_ei(&mut self, ei: &str) -> DBResult<Vec<SpaceShip>> {
         sqlx::query_as(
-            r#"SELECT * FROM "spaceship" WHERE "belong" = ? ORDER BY "land" DESC LIMIT 10"#,
+            r#"SELECT * FROM "spaceship" WHERE "belong" = ? ORDER BY "land" DESC LIMIT 6"#,
         )
         .bind(ei)
         .fetch_all(&mut self.conn)
