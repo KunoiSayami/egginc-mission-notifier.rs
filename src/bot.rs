@@ -42,7 +42,7 @@ pub static USERNAME_CHECKER_RE: LazyLock<regex::Regex> =
     }
 } */
 
-pub fn replace_all<'a>(s: &'a str) -> std::borrow::Cow<'a, str> {
+pub fn replace_all(s: &str) -> std::borrow::Cow<'_, str> {
     TELEGRAM_ESCAPE_RE.replace_all(s, "\\$1")
 }
 
@@ -366,7 +366,7 @@ async fn handle_delete_command(
 async fn handle_ping(bot: BotType, msg: Message, arg: Arc<NecessaryArg>) -> anyhow::Result<()> {
     bot.send_message(
         msg.chat.id,
-        &format!(
+        format!(
             "Chat id: `{id}`\nLast system query: `{last_query}`\nCheck period: {check_period}s\nFetch period: {fetch_period}s\nIs admin: {is_admin}\nVersion: `{version}`",
             id = msg.chat.id.0,
             last_query = replace_all(&timestamp_to_string(

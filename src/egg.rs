@@ -9,6 +9,7 @@ mod definitions {
     pub(super) const API_BACKEND: &str =
         "https://ctx-dot-auxbrainhome.appspot.com/ei/bot_first_contact";
 }
+#[allow(clippy::enum_variant_names)]
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/ei.rs"));
 }
@@ -48,9 +49,7 @@ pub mod functions {
             platform: Some(PLATFORM),
         };
 
-        let mut v = Vec::new();
-
-        v.reserve(request.encoded_len());
+        let mut v = Vec::with_capacity(request.encoded_len());
 
         request.encode(&mut v).unwrap();
 
@@ -285,7 +284,7 @@ pub mod monitor {
                 let msg = format!(
                     "User _{}_ changed their name from _{}_ to _{}_",
                     account.ei(),
-                    replace_all(&account.name()),
+                    replace_all(account.name()),
                     replace_all(&username)
                 );
                 database
@@ -374,7 +373,7 @@ pub mod monitor {
             for user in account_map.chat_ids() {
                 bot.send_message(
                     user,
-                    &format!("*{}*:\n{}", replace_all(account.name()), pending.join("\n")),
+                    format!("*{}*:\n{}", replace_all(account.name()), pending.join("\n")),
                 )
                 .await?;
             }

@@ -17,8 +17,8 @@ static CHECK_PERIOD: OnceLock<i64> = OnceLock::new();
 
 //const STATIC_DATA: &[u8] = include_bytes!("../out1.data");
 
-async fn async_main(config_file: &String) -> anyhow::Result<()> {
-    let config = Config::read(&config_file).await?;
+async fn async_main(config_file: &str) -> anyhow::Result<()> {
+    let config = Config::read(config_file).await?;
     let (database_thread, database_helper) = DatabaseHandle::connect("spaceship.db").await?;
 
     let bot = bot(&config)?;
@@ -89,5 +89,5 @@ fn main() -> anyhow::Result<()> {
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async_main(matches.get_one("CONFIG").unwrap()))
+        .block_on(async_main(matches.get_one::<String>("CONFIG").unwrap()))
 }
