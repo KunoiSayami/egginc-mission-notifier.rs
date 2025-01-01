@@ -14,6 +14,8 @@ use egg::monitor::Monitor;
 
 static FETCH_PERIOD: OnceLock<i64> = OnceLock::new();
 static CHECK_PERIOD: OnceLock<i64> = OnceLock::new();
+const CACHE_REFRESH_PERIOD: u64 = 300;
+const CACHE_REQUEST_OFFSET: u64 = CACHE_REFRESH_PERIOD * 2;
 
 //const STATIC_DATA: &[u8] = include_bytes!("../out1.data");
 

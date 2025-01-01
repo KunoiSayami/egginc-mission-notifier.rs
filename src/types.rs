@@ -1,4 +1,4 @@
-use std::{hash::Hash, sync::LazyLock};
+use std::{collections::HashSet, hash::Hash, sync::LazyLock};
 
 use chrono::DateTime;
 use itertools::Itertools as _;
@@ -139,7 +139,7 @@ impl FromRow<'_, SqliteRow> for AccountMap {
                     row.split(",")
                         .filter_map(|s| {
                             s.parse()
-                                .inspect_err(|e| log::warn!("Parse {s:?} failure: {e:?}"))
+                                .inspect_err(|e| log::warn!("Parse user {s:?} failure: {e:?}"))
                                 .ok()
                         })
                         .collect()
@@ -204,7 +204,7 @@ impl std::fmt::Display for Account {
     }
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Clone, Debug, FromRow, Eq)]
 pub struct SpaceShip {
     id: String,
     name: String,
@@ -258,10 +258,32 @@ impl SpaceShip {
     }
 }
 
+impl PartialEq for SpaceShip {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Hash for SpaceShip {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 pub fn return_tf_emoji(input: bool) -> &'static str {
     if input {
         "✅"
     } else {
         "❌"
     }
+}
+
+pub fn convert_set(v: Vec<HashSet<SpaceShip>>) -> Vec<SpaceShip> {
+    v.into_iter()
+        .reduce(|mut acc, x| {
+            acc.extend(x.into_iter());
+            acc
+        })
+        .map(|h| h.into_iter().collect_vec())
+        .unwrap_or_default()
 }

@@ -160,6 +160,7 @@ pub mod types {
 }
 
 pub mod monitor {
+    use std::collections::{BTreeMap, HashSet};
     use std::sync::atomic::AtomicU64;
     use std::sync::LazyLock;
     use std::{collections::HashMap, time::Duration};
@@ -173,9 +174,12 @@ pub mod monitor {
     use tokio::{task::JoinHandle, time::interval};
 
     use crate::bot::replace_all;
-    use crate::types::{timestamp_to_string, AccountMap, SpaceShip};
-    use crate::CHECK_PERIOD;
-    use crate::{bot::BotType, database::DatabaseHelper, types::Account, FETCH_PERIOD};
+    use crate::types::{convert_set, timestamp_to_string, AccountMap, SpaceShip};
+    use crate::CACHE_REQUEST_OFFSET;
+    use crate::{
+        bot::BotType, database::DatabaseHelper, types::Account, CACHE_REFRESH_PERIOD, CHECK_PERIOD,
+        FETCH_PERIOD,
+    };
 
     use super::functions::{get_missions, request};
 
@@ -184,6 +188,7 @@ pub mod monitor {
     #[derive(Clone, Debug, Helper, PartialEq)]
     pub enum MonitorEvent {
         NewClient,
+        RefreshCache,
         Exit,
     }
 
@@ -196,13 +201,39 @@ pub mod monitor {
             let (s, r) = MonitorHelper::new(4);
             (
                 Self {
-                    handle: tokio::spawn(Self::run(database, r, bot)),
+                    handle: tokio::spawn(Self::run(s.clone(), database, r, bot)),
                 },
                 s,
             )
         }
 
+        async fn refresh_cache(
+            cache: &mut BTreeMap<i64, HashSet<SpaceShip>>,
+            database: &DatabaseHelper,
+        ) -> anyhow::Result<()> {
+            let missions = database
+                .mission_query(kstool::time::get_current_second() + CACHE_REQUEST_OFFSET)
+                .await
+                .ok_or_else(|| anyhow!("Query database mission error"))?;
+
+            for mission in missions {
+                cache.entry(mission.land()).or_default().insert(mission);
+            }
+            log::debug!(
+                "Cache refreshed: {}",
+                cache
+                    .values()
+                    .map(|v| v
+                        .iter()
+                        .map(|s| format!("{} {}", s.belong(), timestamp_to_string(s.land())))
+                        .join("; "))
+                    .join("; ")
+            );
+            Ok(())
+        }
+
         async fn run(
+            self_helper: MonitorHelper,
             database: DatabaseHelper,
             mut helper: MonitorEventReceiver,
             bot: BotType,
@@ -211,7 +242,10 @@ pub mod monitor {
                 interval(Duration::from_secs(*(CHECK_PERIOD.get().unwrap()) as u64));
             let mut notify_timer = interval(Duration::from_secs(3));
             let mut clear_timer = interval(Duration::from_secs(43200));
+            let mut cache_refresh_timer = interval(Duration::from_secs(CACHE_REFRESH_PERIOD));
             clear_timer.reset();
+
+            let mut cache = BTreeMap::new();
 
             let mut works = Vec::new();
 
@@ -221,25 +255,38 @@ pub mod monitor {
                         match event {
                             MonitorEvent::NewClient => {
                                 query_timer.reset_immediately();
+                                cache_refresh_timer.reset_immediately();
                                 continue;
                             },
+                            MonitorEvent::RefreshCache => {
+                                cache_refresh_timer.reset_immediately();
+                                continue;
+                            }
                             MonitorEvent::Exit => break,
                         }
                     }
 
                     _ = query_timer.tick() => {
                         let database = database.clone();
-                        let bot =  bot.clone();
+                        let bot = bot.clone();
+                        let helper = self_helper.clone();
                         works.push(tokio::spawn(async move {
-                            Self::query(database, bot).await
+                            Self::query(database, bot, helper).await
                                 .inspect_err(|e| log::error!("Query function error: {e:?}"))
                                 .ok();
                         }));
                     }
 
                     _ = notify_timer.tick() => {
-                        Self::notify(&database, &bot).await
+                        let current_time = kstool::time::get_current_second() as i64;
+                        Self::notify(&Self::split_mission(&mut cache, current_time), &database, &bot).await
                             .inspect_err(|e| log::error!("Notify error: {e:?}"))
+                            .ok();
+                    }
+
+                    _ = cache_refresh_timer.tick() => {
+                        Self::refresh_cache(&mut cache, &database).await
+                            .inspect_err(|e| log::error!("Refresh cache error: {e:?}"))
                             .ok();
                     }
 
@@ -303,6 +350,7 @@ pub mod monitor {
             account: &Account,
             database: &DatabaseHelper,
             bot: &BotType,
+            helper: &MonitorHelper,
         ) -> anyhow::Result<bool> {
             if database
                 .mission_query_by_account(account.ei().to_string())
@@ -370,6 +418,8 @@ pub mod monitor {
                 return Ok(true);
             }
 
+            helper.refresh_cache().await;
+
             for user in account_map.chat_ids() {
                 bot.send_message(
                     user,
@@ -381,7 +431,11 @@ pub mod monitor {
             Ok(true)
         }
 
-        async fn query(database: DatabaseHelper, bot: BotType) -> anyhow::Result<()> {
+        async fn query(
+            database: DatabaseHelper,
+            bot: BotType,
+            helper: MonitorHelper,
+        ) -> anyhow::Result<()> {
             LAST_QUERY.store(
                 kstool::time::get_current_second(),
                 std::sync::atomic::Ordering::Relaxed,
@@ -402,7 +456,7 @@ pub mod monitor {
                     //log::debug!("Skip user {}", account.ei());
                     continue;
                 }
-                let ret = Self::handle_each_account(&client, &account, &database, &bot)
+                let ret = Self::handle_each_account(&client, &account, &database, &bot, &helper)
                     .await
                     .inspect_err(|e| log::error!("Remote query user got error: {e:?}"));
 
@@ -434,14 +488,52 @@ pub mod monitor {
             Ok(())
         }
 
-        async fn notify(database: &DatabaseHelper, bot: &BotType) -> anyhow::Result<()> {
-            let missions = database
-                .mission_query()
-                .await
-                .ok_or_else(|| anyhow!("Query database mission error"))?;
+        fn split_mission(
+            cache: &mut BTreeMap<i64, HashSet<SpaceShip>>,
+            current_time: i64,
+        ) -> Vec<SpaceShip> {
+            if cache.is_empty()
+                || cache
+                    .first_key_value()
+                    .is_some_and(|(key, _)| key > &current_time)
+            {
+                return vec![];
+            }
+
+            if cache
+                .last_key_value()
+                .is_some_and(|(key, _)| key <= &current_time)
+            {
+                return convert_set(std::mem::take(cache).into_values().collect_vec());
+            }
+
+            let mut board = None;
+            for key in cache.keys() {
+                if key <= &current_time {
+                    continue;
+                }
+                board.replace(*key);
+            }
+            let Some(board) = board else {
+                log::warn!("Board not found but cache is not empty, return default. Board: {current_time}, BtreeMap: {cache:?}");
+                return vec![];
+            };
+            let tmp = cache.split_off(&board);
+            convert_set(std::mem::replace(cache, tmp).into_values().collect_vec())
+        }
+
+        async fn notify(
+            missions: &[SpaceShip],
+            database: &DatabaseHelper,
+            bot: &BotType,
+        ) -> anyhow::Result<()> {
+            if missions.is_empty() {
+                return Ok(());
+            }
+            log::debug!("Notify missions: {missions:?}");
 
             let mut pending = HashMap::new();
-            for mission in &missions {
+            for mission in missions {
                 pending
                     .entry(mission.belong())
                     .or_insert_with(Vec::new)

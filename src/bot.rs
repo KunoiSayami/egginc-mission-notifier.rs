@@ -28,20 +28,6 @@ static TELEGRAM_ESCAPE_RE: LazyLock<regex::Regex> =
 pub static USERNAME_CHECKER_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^EI\d{16}$").unwrap());
 
-/* fn accept_two_digits(input: String) -> Result<(u8,), ParseError> {
-    match input.len() {
-        2 => {
-            let num = input
-                .parse::<u8>()
-                .map_err(|e| ParseError::IncorrectFormat(e.into()))?;
-            Ok((num,))
-        }
-        len => Err(ParseError::Custom(
-            format!("Only 2 digits allowed, not {}", len).into(),
-        )),
-    }
-} */
-
 pub fn replace_all(s: &str) -> std::borrow::Cow<'_, str> {
     TELEGRAM_ESCAPE_RE.replace_all(s, "\\$1")
 }

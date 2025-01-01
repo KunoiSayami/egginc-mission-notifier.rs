@@ -607,7 +607,9 @@ pub enum DatabaseEvent {
     },
 
     #[ret(Vec<SpaceShip>)]
-    MissionQuery,
+    MissionQuery{
+        deadline: u64,
+    },
     #[ret(HashMap<Account, Vec<SpaceShip>>)]
     MissionQueryByUser { id: i64, query_recent: bool },
 
@@ -681,11 +683,12 @@ impl DatabaseHandle {
                     .insert_spaceship(id, name, duration_type, belong, land)
                     .await?;
             }
-            DatabaseEvent::MissionQuery(sender) => {
-                let r = database
-                    .query_spaceship_by_time(kstool::time::get_current_second() as i64)
-                    .await?;
-                sender.send(r).ok();
+            DatabaseEvent::MissionQuery {
+                deadline,
+                __private_sender,
+            } => {
+                let r = database.query_spaceship_by_time(deadline as i64).await?;
+                __private_sender.send(r).ok();
             }
             DatabaseEvent::AccountQueryEI {
                 ei,
