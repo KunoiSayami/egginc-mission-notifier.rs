@@ -521,10 +521,9 @@ pub mod monitor {
             cache: &mut BTreeMap<i64, HashSet<SpaceShip>>,
             current_time: i64,
         ) -> Vec<SpaceShip> {
-            if cache.is_empty()
-                || cache
-                    .first_key_value()
-                    .is_some_and(|(key, _)| key > &current_time)
+            if cache
+                .first_key_value()
+                .is_none_or(|(key, _)| key > &current_time)
             {
                 return vec![];
             }
