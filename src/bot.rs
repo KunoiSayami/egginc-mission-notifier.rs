@@ -42,6 +42,8 @@ mod admin {
         Query { ei: Option<&'a str> },
         ResetNotify { ei: &'a str, limit: i32 },
         UserToggle { ei: &'a str, enabled: bool },
+        CacheReset { invalidate: bool },
+        CacheInsertFake { ei: &'a str, land_times: Vec<i64> },
         ListUsers,
     }
 
@@ -49,15 +51,16 @@ mod admin {
         type Error = &'static str;
 
         fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-            if value.contains(' ') {
-                let (first, second) = value.split_once(' ').unwrap();
-
+            if let Some((first, second)) = value.split_once(' ') {
                 match first {
                     "query" => Ok(Self::Query { ei: Some(second) }),
                     "reset" => {
-                        if second.contains(' ') {
-                            let (second1, second2) = second.split_once(' ').unwrap();
-                            if USERNAME_CHECKER_RE.is_match(second1) {
+                        if let Some((second1, second2)) = second.split_once(' ') {
+                            if second1 == "cache" {
+                                Ok(Self::CacheReset {
+                                    invalidate: second2.eq("true"),
+                                })
+                            } else if USERNAME_CHECKER_RE.is_match(second1) {
                                 Ok(Self::ResetNotify {
                                     ei: second1,
                                     limit: second2.parse().map_err(|_| "Parse number error")?,
@@ -65,8 +68,33 @@ mod admin {
                             } else {
                                 Err("Wrong EI format")
                             }
+                        } else if second == "cache" {
+                            Ok(Self::CacheReset { invalidate: false })
                         } else {
                             Err("Invalid format")
+                        }
+                    }
+                    "cache-insert" => {
+                        if let Some((second1, second2)) = second.split_once(' ') {
+                            if USERNAME_CHECKER_RE.is_match(second1) {
+                                Ok(Self::CacheInsertFake { ei: &second1, land_times: second2.split(' ').filter_map(|x| {
+                                    x.parse()
+                                        .inspect_err(|e| {
+                                            log::warn!("Parse {x:?} to number error, ignored: {e:?}")
+                                        })
+                                        .ok()
+                                }).collect() })
+                            } else {
+                                Err("Wrong EI format")
+                            }
+                        } else {
+                            if !USERNAME_CHECKER_RE.is_match(second) {
+                                return Err("Wrong EI format");
+                            }
+                            Ok(Self::CacheInsertFake {
+                                ei: &second,
+                                land_times: vec![30, 60, 90],
+                            })
                         }
                     }
                     "enable" | "disable" => Ok(Self::UserToggle {
@@ -134,6 +162,14 @@ mod admin {
                         .join("\n"),
                 )
                 .await
+            }
+            AdminCommand::CacheReset { invalidate } => {
+                arg.monitor().refresh_cache(invalidate).await;
+                bot.send_message(msg.chat.id, "Cache reset!").await
+            }
+            AdminCommand::CacheInsertFake { ei, land_times } => {
+                arg.monitor().insert_cache(ei.to_string(), land_times).await;
+                bot.send_message(msg.chat.id, "New cache inserted").await
             }
         }?;
         Ok(())

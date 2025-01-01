@@ -185,10 +185,11 @@ pub mod monitor {
 
     pub static LAST_QUERY: LazyLock<AtomicU64> = LazyLock::new(|| AtomicU64::new(0));
 
-    #[derive(Clone, Debug, Helper, PartialEq)]
+    #[derive(Clone, Debug, Helper)]
     pub enum MonitorEvent {
         NewClient,
-        RefreshCache,
+        RefreshCache { invalidate: bool },
+        InsertCache { ei: String, land_times: Vec<i64> },
         Exit,
     }
 
@@ -219,16 +220,22 @@ pub mod monitor {
             for mission in missions {
                 cache.entry(mission.land()).or_default().insert(mission);
             }
-            log::debug!(
-                "Cache refreshed: {}",
-                cache
-                    .values()
-                    .map(|v| v
+            /* if !cache.is_empty() {
+                log::debug!(
+                    "Cache refreshed: {}",
+                    cache
                         .iter()
-                        .map(|s| format!("{} {}", s.belong(), timestamp_to_string(s.land())))
-                        .join("; "))
-                    .join("; ")
-            );
+                        .map(|(k, v)| v
+                            .iter()
+                            .map(|s| format!(
+                                "{k} {} {}",
+                                s.belong(),
+                                timestamp_to_string(s.land())
+                            ))
+                            .join("; "))
+                        .join("; ")
+                );
+            } */
             Ok(())
         }
 
@@ -257,9 +264,16 @@ pub mod monitor {
                                 query_timer.reset_immediately();
                                 cache_refresh_timer.reset_immediately();
                                 continue;
-                            },
-                            MonitorEvent::RefreshCache => {
+                            }
+                            MonitorEvent::RefreshCache { invalidate } => {
+                                if invalidate {
+                                    cache.clear();
+                                }
                                 cache_refresh_timer.reset_immediately();
+                                continue;
+                            }
+                            MonitorEvent::InsertCache { ei, land_times } => {
+                                Self::insert_fake_spaceships(&mut cache, ei, &land_times);
                                 continue;
                             }
                             MonitorEvent::Exit => break,
@@ -314,6 +328,21 @@ pub mod monitor {
             }
 
             Ok(())
+        }
+
+        fn insert_fake_spaceships(
+            cache: &mut BTreeMap<i64, HashSet<SpaceShip>>,
+            ei: String,
+            land_times: &[i64],
+        ) {
+            let current = kstool::time::get_current_second() as i64;
+            for land_time in land_times {
+                let land_time = current + land_time;
+                cache
+                    .entry(land_time)
+                    .or_default()
+                    .insert(SpaceShip::random(ei.clone(), land_time));
+            }
         }
 
         async fn check_username(
@@ -418,7 +447,7 @@ pub mod monitor {
                 return Ok(true);
             }
 
-            helper.refresh_cache().await;
+            helper.refresh_cache(false).await;
 
             for user in account_map.chat_ids() {
                 bot.send_message(
@@ -500,10 +529,11 @@ pub mod monitor {
                 return vec![];
             }
 
-            if cache
-                .last_key_value()
-                .is_some_and(|(key, _)| key <= &current_time)
-            {
+            if cache.last_key_value().is_some_and(|(key, _)| {
+                //log::debug!("{key} {current_time} {}", timestamp_to_string(*key));
+                key <= &current_time
+            }) {
+                //log::debug!("All cache value returned");
                 return convert_set(std::mem::take(cache).into_values().collect_vec());
             }
 
@@ -513,6 +543,8 @@ pub mod monitor {
                     continue;
                 }
                 board.replace(*key);
+                //log::debug!("Select {key} {}", timestamp_to_string(*key));
+                break;
             }
             let Some(board) = board else {
                 log::warn!("Board not found but cache is not empty, return default. Board: {current_time}, BtreeMap: {cache:?}");
@@ -530,7 +562,7 @@ pub mod monitor {
             if missions.is_empty() {
                 return Ok(());
             }
-            log::debug!("Notify missions: {missions:?}");
+            //log::debug!("Notify missions: {missions:?}");
 
             let mut pending = HashMap::new();
             for mission in missions {
