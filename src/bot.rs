@@ -17,7 +17,7 @@ use crate::{
     config::Config,
     database::DatabaseHelper,
     egg::monitor::{MonitorHelper, LAST_QUERY},
-    types::{return_tf_emoji, timestamp_to_string},
+    types::{return_tf_emoji, timestamp_to_string, SpaceShip},
     CHECK_PERIOD, FETCH_PERIOD,
 };
 
@@ -434,6 +434,18 @@ async fn handle_list_command(
     Ok(())
 }
 
+// Credit: Asuna
+fn iter_spaceships(
+    spaceships: Vec<SpaceShip>,
+    recent: bool,
+) -> Box<dyn Iterator<Item = SpaceShip>> {
+    if recent {
+        Box::new(spaceships.into_iter().rev())
+    } else {
+        Box::new(spaceships.into_iter())
+    }
+}
+
 async fn handle_missions_command(
     bot: BotType,
     arg: Arc<NecessaryArg>,
@@ -469,17 +481,16 @@ async fn handle_missions_command(
             format!(
                 "*{}*:\n{}",
                 replace_all(player.name()),
-                spaceships
-                    .into_iter()
+                iter_spaceships(spaceships, recent)
                     .map(|s| {
-                        /* let delta = s.calc_time(&msg.date);
+                        let delta = s.calc_time(&msg.date);
                         let delta = if delta.is_empty() {
                             delta
                         } else {
-                            format!("{} ", delta)
-                        }; */
+                            format!(" {} left", delta)
+                        };
                         format!(
-                            "{} \\({}\\) {} {}",
+                            "{} \\({}\\) {} {}{delta}",
                             replace_all(s.name()),
                             s.duration_type(),
                             replace_all(&timestamp_to_string(s.land())),

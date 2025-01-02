@@ -238,13 +238,13 @@ impl SpaceShip {
         }
     }
 
-    /* pub fn calc_time(&self, input: &DateTime<chrono::Utc>) -> String {
+    pub fn calc_time(&self, input: &DateTime<chrono::Utc>) -> String {
         if self.notified {
             return Default::default();
         }
         let time = DateTime::from_timestamp(self.land, 0).unwrap();
-        format!("{:?}", time - input)
-    } */
+        fmt_time_delta(time - input)
+    }
 
     pub fn notified(&self) -> bool {
         self.notified
@@ -301,4 +301,16 @@ pub fn convert_set(v: Vec<HashSet<SpaceShip>>) -> Vec<SpaceShip> {
         })
         .map(|h| h.into_iter().collect_vec())
         .unwrap_or_default()
+}
+
+fn fmt_time_delta(delta: chrono::TimeDelta) -> String {
+    let days = delta.num_days();
+    let day_str = format!("{days} day{}, ", if days > 1 { "s" } else { "" });
+    format!(
+        "{}{:02}:{:02}:{:02}",
+        if days > 0 { day_str.as_str() } else { "" },
+        delta.num_hours() % 24,
+        delta.num_minutes() % 60,
+        delta.num_seconds() % 60,
+    )
 }

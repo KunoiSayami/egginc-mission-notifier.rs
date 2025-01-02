@@ -218,7 +218,10 @@ pub mod monitor {
                 .ok_or_else(|| anyhow!("Query database mission error"))?;
 
             for mission in missions {
-                cache.entry(mission.land()).or_default().insert(mission);
+                cache
+                    .entry(mission.land())
+                    .or_insert_with(|| HashSet::with_capacity(1))
+                    .insert(mission);
             }
             /* if !cache.is_empty() {
                 log::debug!(
@@ -465,10 +468,8 @@ pub mod monitor {
             bot: BotType,
             helper: MonitorHelper,
         ) -> anyhow::Result<()> {
-            LAST_QUERY.store(
-                kstool::time::get_current_second(),
-                std::sync::atomic::Ordering::Relaxed,
-            );
+            let current_time = kstool::time::get_current_second();
+            LAST_QUERY.store(current_time, std::sync::atomic::Ordering::Relaxed);
 
             let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
 
@@ -479,8 +480,7 @@ pub mod monitor {
             {
                 //log::debug!("Start query user {}", player.ei());
                 if account.disabled()
-                    || kstool::time::get_current_second() as i64 - account.last_fetch()
-                        < (*FETCH_PERIOD.get().unwrap())
+                    || current_time as i64 - account.last_fetch() < (*FETCH_PERIOD.get().unwrap())
                 {
                     //log::debug!("Skip user {}", account.ei());
                     continue;
