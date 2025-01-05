@@ -165,7 +165,7 @@ mod admin {
             }
             AdminCommand::CacheReset { invalidate } => {
                 arg.monitor().refresh_cache(invalidate).await;
-                bot.send_message(msg.chat.id, "Cache reset!").await
+                bot.send_message(msg.chat.id, "Cache reset\\!").await
             }
             AdminCommand::CacheInsertFake { ei, land_times } => {
                 arg.monitor().insert_cache(ei.to_string(), land_times).await;
@@ -380,7 +380,7 @@ async fn handle_delete_command(
 
     arg.database().user_remove_account(msg.chat.id.0, ei).await;
 
-    bot.send_message(msg.chat.id, "Deleted").await?;
+    bot.send_message(msg.chat.id, "User deleted").await?;
 
     Ok(())
 }
