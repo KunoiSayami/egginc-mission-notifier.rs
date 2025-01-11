@@ -115,43 +115,6 @@ pub mod v3 {
     use sqlx::SqliteConnection;
 
     pub const VERSION: &str = "3";
-    pub const CREATE_STATEMENT: &str = r#"
-        CREATE TABLE "account" (
-            "ei"        TEXT NOT NULL,
-            "nickname"  TEXT,
-            "last_fetch"    INTEGER NOT NULL DEFAULT 0,
-            "disabled"  INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY("ei")
-        );
-
-        CREATE TABLE "user" (
-            "id" INTEGER NOT NULL,
-            "accounts" TEXT NOT NULL,
-            PRIMARY KEY("id")
-        );
-
-        CREATE TABLE "account_map" (
-            "ei" TEXT NOT NULL,
-            "users" TEXT NOT NULL,
-            PRIMARY KEY("ei")
-        );
-
-        CREATE TABLE "meta" (
-            "key"       TEXT NOT NULL,
-            "value"     TEXT,
-            PRIMARY KEY("key")
-        );
-
-        CREATE TABLE "spaceship" (
-            "id"        TEXT NOT NULL,
-            "name"      TEXT NOT NULL,
-            "duration_type"  INTEGER NOT NULL,
-            "belong"    TEXT NOT NULL,
-            "land"      INTEGER NOT NULL,
-            "notified" INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY("id")
-        );
-    "#;
 
     const MERGE_STATEMENT_STAGE: &str = r#"
         CREATE TABLE "spaceship_1" (
@@ -212,6 +175,146 @@ pub mod v3 {
         .await?;
         info!("Merge completed");
 
+        Ok(())
+    }
+}
+
+pub mod v4 {
+    use log::info;
+    use sqlx::SqliteConnection;
+
+    pub const VERSION: &str = "4";
+    pub const CREATE_STATEMENT: &str = r#"
+        CREATE TABLE "account" (
+            "ei"        TEXT NOT NULL,
+            "nickname"  TEXT,
+            "last_fetch"    INTEGER NOT NULL DEFAULT 0,
+            "contract_trace" INTEGER NOT NULL DEFAULT 0,
+            "disabled"  INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY("ei")
+        );
+
+        CREATE TABLE "user" (
+            "id" INTEGER NOT NULL,
+            "accounts" TEXT NOT NULL,
+            PRIMARY KEY("id")
+        );
+
+        CREATE TABLE "account_map" (
+            "ei" TEXT NOT NULL,
+            "users" TEXT NOT NULL,
+            PRIMARY KEY("ei")
+        );
+
+        CREATE TABLE "meta" (
+            "key"       TEXT NOT NULL,
+            "value"     TEXT,
+            PRIMARY KEY("key")
+        );
+
+        CREATE TABLE "spaceship" (
+            "id"        TEXT NOT NULL,
+            "name"      TEXT NOT NULL,
+            "duration_type"  INTEGER NOT NULL,
+            "belong"    TEXT NOT NULL,
+            "land"      INTEGER NOT NULL,
+            "notified" INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY("id")
+        );
+
+        CREATE TABLE "player_contract" (
+            "id"	TEXT NOT NULL,
+            "room"	TEXT NOT NULL,
+            "belong"	TEXT NOT NULL,
+            "start_time" INTEGER NOT NULL,
+            "finished"	INTEGER NOT NULL,
+            PRIMARY KEY("id", "belong")
+        );
+
+        CREATE TABLE "contract" (
+            "id"	TEXT NOT NULL,
+            "body"	BLOB NOT NULL,
+            PRIMARY KEY("id")
+        );
+
+        CREATE TABLE "contract_cache" (
+            "id"	TEXT NOT NULL,
+            "room"	TEXT NOT NULL,
+            "body"	BLOB NOT NULL,
+            "timestamp"	INTEGER NOT NULL,
+            PRIMARY KEY("id")
+        );
+    "#;
+
+    const MERGE_STATEMENT_STAGE: &str = r#"
+        CREATE TABLE "account_1" (
+            "ei"        TEXT NOT NULL,
+            "nickname"  TEXT,
+            "last_fetch"    INTEGER NOT NULL DEFAULT 0,
+            "contract_trace" INTEGER NOT NULL DEFAULT 0,
+            "disabled"  INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY("ei")
+        );
+
+        CREATE TABLE "player_contract" (
+            "id"	TEXT NOT NULL,
+            "room"	TEXT NOT NULL,
+            "belong"	TEXT NOT NULL,
+            "start_time" INTEGER NOT NULL,
+            "finished"	INTEGER NOT NULL,
+            PRIMARY KEY("id", "belong")
+        );
+
+        CREATE TABLE "contract" (
+            "id"	TEXT NOT NULL,
+            "size"  INTEGER NOT NULL,
+            "token_time" INTEGER NOT NULL,
+            "body"	BLOB NOT NULL,
+            PRIMARY KEY("id")
+        );
+
+        CREATE TABLE "contract_cache" (
+            "id"	TEXT NOT NULL,
+            "room"	TEXT NOT NULL,
+            "body"	BLOB NOT NULL,
+            "timestamp"	INTEGER NOT NULL,
+            PRIMARY KEY("id")
+        );
+
+    "#;
+
+    pub async fn merge_v3(conn: &mut SqliteConnection) -> sqlx::Result<()> {
+        info!("Performing database prepare stage (v4)");
+        sqlx::raw_sql(MERGE_STATEMENT_STAGE)
+            .execute(&mut *conn)
+            .await?;
+
+        let accounts = sqlx::query_as::<_, (String, Option<String>, i64, bool)>(
+            r#"SELECT "ei", "nickname", "last_fetch", "disabled" FROM "account""#,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+
+        info!("Merge account, total {} account", accounts.len());
+        for (ei, nickname, last, disabled) in accounts {
+            sqlx::query(r#"INSERT INTO "account_1" VALUES (?, ?, ?, ?, ?)"#)
+                .bind(ei)
+                .bind(nickname)
+                .bind(last)
+                .bind(false)
+                .bind(disabled)
+                .execute(&mut *conn)
+                .await?;
+        }
+
+        sqlx::raw_sql(
+            r#"DROP TABLE "account";
+                ALTER TABLE "account_1" RENAME TO "account";
+                UPDATE "meta" SET "value" = '4' WHERE "key" = 'version';"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+        info!("Merge completed");
         Ok(())
     }
 }
@@ -286,6 +389,9 @@ impl Database {
                     }
                     v2::VERSION => {
                         v3::merge_v2(&mut self.conn).await?;
+                    }
+                    v3::VERSION => {
+                        v4::merge_v3(&mut self.conn).await?;
                     }
                     current::VERSION => break,
                     _ => {
@@ -449,6 +555,15 @@ impl Database {
         Ok(())
     }
 
+    pub async fn set_account_contract_track(&mut self, ei: &str, disabled: bool) -> DBResult<()> {
+        sqlx::query(r#"UPDATE "account" SET "contract_track" = ?, "disabled" = ? WHERE "ei" = ? "#)
+            .bind(disabled)
+            .bind(ei)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
     pub async fn account_timestamp_reset(&mut self, ei: &str) -> DBResult<()> {
         sqlx::query(r#"UPDATE "account" SET "last_fetch" = 0 WHERE "ei" = ? "#)
             .bind(ei)
@@ -533,6 +648,126 @@ impl Database {
         Ok(())
     }
 
+    pub async fn query_single_contract(
+        &mut self,
+        id: &str,
+        ei: &str,
+    ) -> DBResult<Option<Contract>> {
+        sqlx::query_as(r#"SELECT * FROM "player_contract" WHERE "id" = ? AND "belong" = ?"#)
+            .bind(id)
+            .bind(ei)
+            .fetch_optional(&mut self.conn)
+            .await
+    }
+
+    pub async fn insert_user_contract(
+        &mut self,
+        id: &str,
+        room: &str,
+        ei: &str,
+        start_time: f64,
+        finished: bool,
+    ) -> DBResult<()> {
+        sqlx::query(r#"INSERT INTO "player_contract" VALUES (?, ?, ?, ?, ?)"#)
+            .bind(id)
+            .bind(room)
+            .bind(ei)
+            .bind(start_time)
+            .bind(finished)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_contract(&mut self, id: &str, ei: &str, finished: bool) -> DBResult<()> {
+        sqlx::query(
+            r#"UPDATE "player_contract" 
+            SET "finished" = ? 
+            WHERE "id" = ? AND "ei" = ? "#,
+        )
+        .bind(finished)
+        .bind(id)
+        .bind(ei)
+        .execute(&mut self.conn)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn query_contract(&mut self, ei: &str) -> DBResult<Vec<Contract>> {
+        sqlx::query_as(
+            r#"SELECT * FROM "player_contract" 
+            WHERE "belong" = ? 
+            ORDER BY "start_time" DESC LIMIT 10"#,
+        )
+        .bind(ei)
+        .fetch_all(&mut self.conn)
+        .await
+    }
+
+    pub async fn query_contract_spec(&mut self, id: &str) -> DBResult<Option<ContractSpec>> {
+        sqlx::query_as(
+            r#"SELECT * FROM "contract" 
+            WHERE "id" = ?"#,
+        )
+        .bind(id)
+        .fetch_optional(&mut self.conn)
+        .await
+    }
+
+    pub async fn insert_contract_cache(
+        &mut self,
+        id: &str,
+        room: &str,
+        body: &[u8],
+        timestamp: i64,
+    ) -> DBResult<()> {
+        sqlx::query(r#"INSERT INTO "contract_cache" VALUES (?, ?, ?, ?, ?)"#)
+            .bind(id)
+            .bind(room)
+            .bind(body)
+            .bind(timestamp)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+    pub async fn insert_contract_spec(&mut self, id: &str, body: &[u8]) -> DBResult<()> {
+        sqlx::query(r#"INSERT INTO "contract" VALUES (?, ?)"#)
+            .bind(id)
+            .bind(body)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn update_contract_cache(
+        &mut self,
+        id: &str,
+        room: &str,
+        body: &[u8],
+        timestamp: i64,
+    ) -> DBResult<()> {
+        sqlx::query(r#"UPDATE "contract_cache" SET "body" = ?, "timestamp" = ? WHERE "id" = ? AND "room" = ?"#)
+        .bind(body)
+        .bind(timestamp)
+        .bind(id)
+        .bind(room)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn query_contract_cache(
+        &mut self,
+        id: &str,
+        room: &str,
+    ) -> DBResult<Option<ContractCache>> {
+        sqlx::query_as(r#"SELECT * FROM "contract_cache" WHERE "id" = ? AND "room" = ?"#)
+            .bind(id)
+            .bind(room)
+            .fetch_optional(&mut self.conn)
+            .await
+    }
+
     pub async fn close(self) -> DBResult<()> {
         self.conn.close().await
     }
@@ -581,6 +816,11 @@ pub enum DatabaseEvent {
         disabled: bool,
     },
 
+    AccountContractUpdate{
+        ei: String,
+        disabled: bool,
+    },
+
     AccountNameUpdate {
         ei: String,
         name: String,
@@ -621,6 +861,38 @@ pub enum DatabaseEvent {
     #[ret(Option<SpaceShip>)]
     MissionSingleQuery { identifier: String },
 
+    #[ret(Option<Contract>)]
+    ContractQuerySingle {
+        id: String,
+        ei: String
+    },
+    #[ret(Option<ContractSpec>)]
+    ContractQuerySpec {
+        id: String,
+    },
+    #[ret(Vec<Contract>)]
+    AccountQueryContract {
+        ei: String,
+    },
+    AccountInsertContract {
+        id: String,
+        room: String,
+        ei: String,
+        start_time: f64,
+        finished: bool
+    },
+    ContractUpdate {
+        id: String,
+        ei: String,
+        finished: bool,
+    },
+    #[ret(Option<ContractCache>)]
+    ContractCacheQuery{
+        id: String,
+        room: String
+    },
+    ContractCacheInsert{id: String, room: String, cache: Vec<u8>},
+    ContractSpecInsert(ContractSpec),
 
     Terminate,
 }
@@ -768,6 +1040,78 @@ impl DatabaseHandle {
                     .send(database.query_account_map(&ei).await?)
                     .ok();
             }
+            DatabaseEvent::ContractCacheInsert { id, room, cache } => {
+                let current = kstool::time::get_current_second() as i64;
+                if database.query_contract_cache(&id, &room).await?.is_none() {
+                    database
+                        .insert_contract_cache(&id, &room, &cache, current)
+                        .await?;
+                } else {
+                    database
+                        .update_contract_cache(&id, &room, &cache, current)
+                        .await?;
+                }
+            }
+            DatabaseEvent::ContractSpecInsert(contract_spec) => {
+                let id = contract_spec.id().to_string();
+                let Ok(body) = serde_cbor::to_vec(&contract_spec.into_inner())
+                    .inspect_err(|e| log::error!("Convert CBOR error {e:?}"))
+                else {
+                    return Ok(());
+                };
+                database.insert_contract_spec(&id, &body).await?;
+            }
+            DatabaseEvent::ContractQuerySingle {
+                id,
+                ei,
+                __private_sender,
+            } => {
+                __private_sender
+                    .send(database.query_single_contract(&id, &ei).await?)
+                    .ok();
+            }
+            DatabaseEvent::AccountInsertContract {
+                id,
+                room,
+                ei,
+                start_time,
+                finished,
+            } => {
+                database
+                    .insert_user_contract(&id, &room, &ei, start_time, finished)
+                    .await?;
+            }
+            DatabaseEvent::ContractUpdate { id, ei, finished } => {
+                database.set_contract(&id, &ei, finished).await?;
+            }
+            DatabaseEvent::AccountContractUpdate { ei, disabled } => {
+                database.set_account_contract_track(&ei, disabled).await?;
+            }
+            DatabaseEvent::AccountQueryContract {
+                ei,
+                __private_sender,
+            } => {
+                __private_sender
+                    .send(database.query_contract(&ei).await?)
+                    .ok();
+            }
+            DatabaseEvent::ContractQuerySpec {
+                id,
+                __private_sender,
+            } => {
+                __private_sender
+                    .send(database.query_contract_spec(&id).await?)
+                    .ok();
+            }
+            DatabaseEvent::ContractCacheQuery {
+                id,
+                room,
+                __private_sender,
+            } => {
+                __private_sender
+                    .send(database.query_contract_cache(&id, &room).await?)
+                    .ok();
+            }
         }
         Ok(())
     }
@@ -792,6 +1136,6 @@ impl DatabaseHandle {
 }
 
 pub type DBResult<T> = sqlx::Result<T>;
-pub use v3 as current;
+pub use v4 as current;
 
-use crate::types::{Account, AccountMap, SpaceShip, User};
+use crate::types::{Account, AccountMap, Contract, ContractCache, ContractSpec, SpaceShip, User};

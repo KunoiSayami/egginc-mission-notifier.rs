@@ -16,7 +16,10 @@ use teloxide::{
 use crate::{
     config::Config,
     database::DatabaseHelper,
-    egg::monitor::{MonitorHelper, LAST_QUERY},
+    egg::{
+        decode_2,
+        monitor::{MonitorHelper, LAST_QUERY},
+    },
     types::{return_tf_emoji, timestamp_to_string, SpaceShip},
     CHECK_PERIOD, FETCH_PERIOD,
 };
@@ -42,6 +45,7 @@ mod admin {
         Query { ei: Option<&'a str> },
         ResetNotify { ei: &'a str, limit: i32 },
         UserToggle { ei: &'a str, enabled: bool },
+        ContractToggle { ei: &'a str, enabled: bool },
         CacheReset { invalidate: bool },
         CacheInsertFake { ei: &'a str, land_times: Vec<i64> },
         ListUsers,
@@ -100,6 +104,10 @@ mod admin {
                     "enable" | "disable" => Ok(Self::UserToggle {
                         ei: second,
                         enabled: first.eq("enable"),
+                    }),
+                    "enable-c" | "disable-c" => Ok(Self::ContractToggle {
+                        ei: second,
+                        enabled: first.eq("enable-c"),
                     }),
                     _ => Err("Invalid command"),
                 }
@@ -171,6 +179,17 @@ mod admin {
                 arg.monitor().insert_cache(ei.to_string(), land_times).await;
                 bot.send_message(msg.chat.id, "New cache inserted").await
             }
+            AdminCommand::ContractToggle { ei, enabled } => {
+                arg.database().account_update(ei.into(), !enabled).await;
+                bot.send_message(
+                    msg.chat.id,
+                    format!(
+                        "Change user {ei} contract trace to {}",
+                        if enabled { "enabled" } else { "disabled" }
+                    ),
+                )
+                .await
+            }
         }?;
         Ok(())
     }
@@ -211,6 +230,8 @@ enum Command {
     Add { ei: String },
     Delete { ei: String },
     List,
+    ListContract { ei: String },
+    ContractCalc { text_arg: String },
     Missions { user: String },
     Recent { user: String },
     Admin { line: String },
@@ -289,6 +310,12 @@ pub async fn bot_run(
                             handle_missions_command(bot, arg, msg, user, true).await
                         }
                         Command::Admin { line } => handle_admin_command(bot, arg, msg, line).await,
+                        Command::ListContract { ei } => {
+                            handle_list_contracts(bot, arg, msg, ei).await
+                        }
+                        Command::ContractCalc { text_arg } => {
+                            handle_calc_contracts(bot, arg, msg, text_arg).await
+                        }
                     }
                 },
             ),
@@ -516,6 +543,119 @@ async fn handle_missions_command(
     }
 
     bot.send_message(msg.chat.id, text).await?;
+
+    Ok(())
+}
+
+async fn handle_list_contracts(
+    bot: BotType,
+    arg: Arc<NecessaryArg>,
+    msg: Message,
+    ei: String,
+) -> anyhow::Result<()> {
+    if !arg.check_admin(msg.chat.id)
+        && !arg
+            .database()
+            .account_query(Some(msg.chat.id.0))
+            .await
+            .ok_or_else(|| anyhow!("Query user error"))?
+            .iter()
+            .any(|x| x.ei().eq(&ei))
+    {
+        bot.send_message(msg.chat.id, "Permission denied").await?;
+        return Ok(());
+    }
+
+    let contracts = arg
+        .database()
+        .account_query_contract(ei)
+        .await
+        .ok_or_else(|| anyhow!("Query user contract error"))?;
+
+    let res = contracts
+        .into_iter()
+        .map(|contract| {
+            format!(
+                "{} {} {} {}",
+                replace_all(contract.id()),
+                replace_all(contract.room()),
+                replace_all(&timestamp_to_string(contract.start_time())),
+                return_tf_emoji(contract.finished())
+            )
+        })
+        .join("\n");
+
+    if res.is_empty() {
+        bot.send_message(msg.chat.id, "Contract not found").await?;
+    } else {
+        bot.send_message(msg.chat.id, res).await?;
+    }
+
+    Ok(())
+}
+
+async fn handle_calc_contracts(
+    bot: BotType,
+    arg: Arc<NecessaryArg>,
+    msg: Message,
+    text: String,
+) -> anyhow::Result<()> {
+    let Some((ei, contract_id)) = text.split_once(' ') else {
+        bot.send_message(msg.chat.id, "Command format error")
+            .await?;
+        return Ok(());
+    };
+
+    if !arg.check_admin(msg.chat.id)
+        && !arg
+            .database()
+            .account_query(Some(msg.chat.id.0))
+            .await
+            .ok_or_else(|| anyhow!("Query user error"))?
+            .iter()
+            .any(|x| x.ei().eq(ei))
+    {
+        bot.send_message(msg.chat.id, "Permission denied").await?;
+        return Ok(());
+    }
+
+    let Some(contract_spec) = arg
+        .database()
+        .contract_query_spec(contract_id.to_string())
+        .await
+        .ok_or_else(|| anyhow!("Query contract spec error"))?
+    else {
+        bot.send_message(msg.chat.id, "Contract spec not found")
+            .await?;
+        return Ok(());
+    };
+
+    let Some(user_contract) = arg
+        .database()
+        .contract_query_single(contract_id.to_string(), ei.to_string())
+        .await
+        .ok_or_else(|| anyhow!("Query user contract room error"))?
+    else {
+        bot.send_message(msg.chat.id, "User room not found").await?;
+        return Ok(());
+    };
+
+    let Some(contract_cache) = arg
+        .database()
+        .contract_cache_query(contract_id.to_string(), user_contract.room().to_string())
+        .await
+        .ok_or_else(|| anyhow!("Query contract cache error"))?
+    else {
+        bot.send_message(msg.chat.id, "Contract cache not found")
+            .await?;
+        return Ok(());
+    };
+
+    let res = decode_2(contract_spec, contract_cache.body())?;
+
+    if !res.is_empty() {
+        bot.send_message(msg.chat.id, res).await?;
+    }
 
     Ok(())
 }

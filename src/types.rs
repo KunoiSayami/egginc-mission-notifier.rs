@@ -1,4 +1,9 @@
-use std::{collections::HashSet, hash::Hash, sync::LazyLock};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+    ops::Deref,
+    sync::LazyLock,
+};
 
 use chrono::DateTime;
 use itertools::Itertools as _;
@@ -6,7 +11,7 @@ use rand::distributions::{Alphanumeric, DistString as _};
 use sqlx::{prelude::FromRow, sqlite::SqliteRow, Row};
 use teloxide::types::ChatId;
 
-use crate::bot::replace_all;
+use crate::{bot::replace_all, egg::types::ContractGradeSpec};
 
 pub static DEFAULT_NICKNAME: LazyLock<String> = LazyLock::new(|| "N/A".to_string());
 
@@ -155,6 +160,7 @@ pub struct Account {
     ei: String,
     nickname: Option<String>,
     last_fetch: i64,
+    contract_trace: bool,
     disabled: bool,
 }
 
@@ -177,6 +183,14 @@ impl Account {
 
     pub fn ei(&self) -> &str {
         &self.ei
+    }
+
+    pub fn force_fetch(&self, current: i64) -> bool {
+        self.contract_trace && self.last_fetch - current > 4 * 3600
+    }
+
+    pub fn contract_trace(&self) -> bool {
+        self.contract_trace
     }
 }
 
@@ -286,11 +300,7 @@ impl Hash for SpaceShip {
 }
 
 pub fn return_tf_emoji(input: bool) -> &'static str {
-    if input {
-        "✅"
-    } else {
-        "❌"
-    }
+    input.then(|| "✅").unwrap_or("❌")
 }
 
 pub fn convert_set(v: Vec<HashSet<SpaceShip>>) -> Vec<SpaceShip> {
@@ -303,7 +313,7 @@ pub fn convert_set(v: Vec<HashSet<SpaceShip>>) -> Vec<SpaceShip> {
         .unwrap_or_default()
 }
 
-fn fmt_time_delta(delta: chrono::TimeDelta) -> String {
+pub fn fmt_time_delta(delta: chrono::TimeDelta) -> String {
     let days = delta.num_days();
     let day_str = format!("{days} day{}, ", if days > 1 { "s" } else { "" });
     format!(
@@ -314,3 +324,132 @@ fn fmt_time_delta(delta: chrono::TimeDelta) -> String {
         delta.num_seconds() % 60,
     )
 }
+
+#[derive(Clone, Debug, FromRow)]
+pub struct Contract {
+    id: String,
+    room: String,
+    #[allow(unused)]
+    belong: String,
+    start_time: i64,
+    finished: bool,
+}
+
+impl Contract {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn room(&self) -> &str {
+        &self.room
+    }
+
+    /* pub fn belong(&self) -> &str {
+        &self.belong
+    } */
+
+    pub fn finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn start_time(&self) -> i64 {
+        self.start_time
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ContractSpec {
+    id: String,
+    max_coop_size: i64,
+    token_time: f64,
+    spec: HashMap<crate::egg::proto::contract::PlayerGrade, ContractGradeSpec>,
+}
+
+impl ContractSpec {
+    pub fn new(
+        id: String,
+        max_coop_size: i64,
+        token_time: f64,
+        spec: Vec<ContractGradeSpec>,
+    ) -> Self {
+        Self {
+            id,
+            max_coop_size,
+            token_time,
+            spec: spec.into_iter().map(|x| x.into_kv()).collect(),
+        }
+    }
+
+    pub fn into_inner(self) -> Vec<ContractGradeSpec> {
+        self.spec.into_values().collect_vec()
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn max_coop_size(&self) -> i64 {
+        self.max_coop_size
+    }
+
+    pub fn token_time(&self) -> f64 {
+        self.token_time
+    }
+}
+
+impl Deref for ContractSpec {
+    type Target = HashMap<crate::egg::proto::contract::PlayerGrade, ContractGradeSpec>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.spec
+    }
+}
+
+impl FromRow<'_, SqliteRow> for ContractSpec {
+    fn from_row(row: &SqliteRow) -> Result<Self, sqlx::Error> {
+        Ok(Self {
+            id: row.try_get(0)?,
+            max_coop_size: row.try_get(1)?,
+            token_time: row.try_get(2)?,
+            spec: {
+                let v: Vec<ContractGradeSpec> = serde_cbor::from_slice(row.try_get(3)?)
+                    .inspect_err(|e| log::error!("Deserialize CBOR data error: {e:?}"))
+                    .unwrap();
+                v.into_iter().map(|x| x.into_kv()).collect()
+            },
+        })
+    }
+}
+
+#[allow(unused)]
+#[derive(Clone, Debug, FromRow)]
+pub struct ContractCache {
+    id: String,
+    room: String,
+    body: Vec<u8>,
+    timestamp: i64,
+}
+
+impl ContractCache {
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+}
+
+impl From<ContractCache> for Vec<u8> {
+    fn from(value: ContractCache) -> Self {
+        value.body
+    }
+}
+
+/* impl FromRow<'_, SqliteRow> for ContractCache {
+    fn from_row(row: &SqliteRow) -> Result<Self, sqlx::Error> {
+        Ok(Self {
+            id: row.try_get(0)?,
+            room: row.try_get(1)?,
+            body:
+            ,
+        })
+    }
+}
+ */
