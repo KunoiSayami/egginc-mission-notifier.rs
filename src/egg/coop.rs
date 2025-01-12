@@ -135,6 +135,14 @@ pub async fn query_coop_status(
     Ok(res)
 }
 
+fn calc_timestamp(timestamp: f64) -> f64 {
+    if timestamp < 0.0 {
+        timestamp.abs()
+    } else {
+        kstool::time::get_current_duration().as_millis() as f64 / 1000.0 - timestamp
+    }
+}
+
 fn calc_total_score(
     coop: &proto::ContractCoopStatusResponse,
     goal1: f64,
@@ -147,21 +155,25 @@ fn calc_total_score(
     let s2h = |value: f64| value * 3600.0;
 
     let mut output = vec![];
+
     let (completion_time, expect_remain_time, remain_time) = if !coop.all_goals_achieved() {
         let remain = goal3 - coop.total_amount();
         let (total_elr, offline_egg) = coop
             .contributors
             .iter()
             .filter(|x| x.production_params.is_some() && x.farm_info.is_some())
-            .fold((0.001, 0.0), |(mut acc, mut acc2), x| {
+            .fold((0.001, 0.0), |(mut acc, mut offline_egg), x| {
                 let farm_prams = x.production_params.as_ref().unwrap();
                 let farm_elr = farm_prams.elr() * farm_prams.farm_population();
                 acc += farm_elr;
                 // offline laying
-                acc2 += x.farm_info.as_ref().unwrap().timestamp().abs() * farm_elr;
-                (acc, acc2)
+                let player_offline_egg =
+                    calc_timestamp(x.farm_info.as_ref().unwrap().timestamp()) * farm_elr;
+                offline_egg += player_offline_egg;
+                //log::trace!("Player {} egg {}", x.user_name(), pu(player_offline_egg));
+                (acc, offline_egg)
             });
-        //log::trace!("{remain} {offline_egg} {total_elr}");
+        //log::trace!("{} {} {total_elr}", pu(remain), pu(offline_egg));
         let expect_remain_time = (remain - offline_egg) / total_elr;
         (
             coop_total_time - coop.seconds_remaining() + expect_remain_time,
@@ -178,10 +190,11 @@ fn calc_total_score(
 
     if expect_remain_time > 0.0 {
         output.push(format!(
-            "Expect completion time: {}",
+            "Expect completion time: {}, {}",
             replace_all(&timestamp_to_string(
-                (kstool::time::get_current_second() as f64 + completion_time) as i64
-            ))
+                (kstool::time::get_current_second() as f64 + expect_remain_time) as i64
+            )),
+            fmt_time_delta(TimeDelta::seconds(expect_remain_time as i64))
         ));
     }
 
@@ -237,7 +250,8 @@ fn calc_score(
     expect_remain_time: f64,
     remain_time: f64,
 ) -> f64 {
-    let user_total_delivered = production.delivered() + production.elr() * expect_remain_time;
+    let user_total_delivered = production.delivered()
+        + production.elr() * production.farm_population() * expect_remain_time;
     let ratio = (user_total_delivered * coop_size as f64) / goal3.min(goal1.max(total_delivered));
 
     let big_c = 1.0

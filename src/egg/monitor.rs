@@ -220,16 +220,24 @@ impl Monitor {
         database: &DatabaseHelper,
         info: &super::proto::EggIncFirstContactResponse,
     ) {
-        let Some(contracts) = info
-            .backup
-            .as_ref()
-            .and_then(|x| x.contracts.as_ref())
-            .map(|x| &x.contracts)
-        else {
+        /* {
+            let file = tokio::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open("current.data")
+                .await
+                .ok();
+            if let Some(mut file) = file {
+                file.write_all(format!("{info:#?}").as_bytes()).await.ok();
+            }
+        } */
+
+        let Some(contracts) = info.backup.as_ref().and_then(|x| x.contracts.as_ref()) else {
             return;
         };
 
-        for local_contract in contracts {
+        for local_contract in contracts.contracts.iter().chain(contracts.archive.iter()) {
             let Some(ref contract) = local_contract.contract else {
                 continue;
             };

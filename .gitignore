@@ -9,3 +9,5 @@ target/
 .idea/
 .vscode/
 *.data
+*.out
+src/DATA
