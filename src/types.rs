@@ -332,7 +332,7 @@ pub struct Contract {
     room: String,
     #[allow(unused)]
     belong: String,
-    start_time: i64,
+    start_time: Option<f64>,
     finished: bool,
 }
 
@@ -353,7 +353,7 @@ impl Contract {
         self.finished
     }
 
-    pub fn start_time(&self) -> i64 {
+    pub fn start_time(&self) -> Option<f64> {
         self.start_time
     }
 }

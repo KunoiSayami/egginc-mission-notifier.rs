@@ -581,7 +581,13 @@ async fn handle_list_contracts(
                 "{} {} {} {}",
                 replace_all(contract.id()),
                 replace_all(contract.room()),
-                replace_all(&timestamp_to_string(contract.start_time())),
+                replace_all(&{
+                    if let Some(start_time) = contract.start_time() {
+                        timestamp_to_string(start_time as i64)
+                    } else {
+                        "Unknown".into()
+                    }
+                }),
                 return_tf_emoji(contract.finished())
             )
         })
@@ -653,7 +659,7 @@ async fn handle_calc_contracts(
         return Ok(());
     };
 
-    let res = decode_2(contract_spec, contract_cache.body())?;
+    let res = decode_2(contract_spec, contract_cache.body(), false)?;
 
     if !res.is_empty() {
         bot.send_message(msg.chat.id, res).await?;

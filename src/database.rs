@@ -226,7 +226,7 @@ pub mod v4 {
             "id"	TEXT NOT NULL,
             "room"	TEXT NOT NULL,
             "belong"	TEXT NOT NULL,
-            "start_time" INTEGER NOT NULL,
+            "start_time" REAL,
             "finished"	INTEGER NOT NULL,
             PRIMARY KEY("id", "belong")
         );
@@ -262,7 +262,7 @@ pub mod v4 {
             "id"	TEXT NOT NULL,
             "room"	TEXT NOT NULL,
             "belong"	TEXT NOT NULL,
-            "start_time" INTEGER NOT NULL,
+            "start_time" REAL,
             "finished"	INTEGER NOT NULL,
             PRIMARY KEY("id", "belong")
         );
@@ -667,14 +667,13 @@ impl Database {
         id: &str,
         room: &str,
         ei: &str,
-        start_time: f64,
         finished: bool,
     ) -> DBResult<()> {
-        sqlx::query(r#"INSERT INTO "player_contract" VALUES (?, ?, ?, ?, ?)"#)
+        sqlx::query(r#"INSERT INTO "player_contract" VALUES (?, ?, ?, NULL, ?)"#)
             .bind(id)
             .bind(room)
             .bind(ei)
-            .bind(start_time)
+            //.bind(start_time)
             .bind(finished)
             .execute(&mut self.conn)
             .await?;
@@ -688,18 +687,54 @@ impl Database {
         room: &str,
         finished: bool,
     ) -> DBResult<()> {
+        let start_time = self
+            .query_id_room_with_start_time(id, room)
+            .await?
+            .map(|x| x.start_time())
+            .flatten();
+
         sqlx::query(
             r#"UPDATE "player_contract" 
-            SET "finished" = ?, "room" = ?
+            SET "finished" = ?, "room" = ?, "start_time" = ?
             WHERE "id" = ? AND "belong" = ? "#,
         )
         .bind(finished)
         .bind(room)
+        .bind(start_time)
         .bind(id)
         .bind(ei)
         .execute(&mut self.conn)
         .await?;
         Ok(())
+    }
+
+    pub async fn set_contract_start_time(
+        &mut self,
+        id: &str,
+        room: &str,
+        start_time: f64,
+    ) -> DBResult<()> {
+        sqlx::query(
+            r#"UPDATE "player_contract" SET "start_time" = ? WHERE "id" = ? AND "room" = ? AND "start_time" IS NULL"#,
+        )
+        .bind(start_time)
+        .bind(id)
+        .bind(room)
+        .execute(&mut self.conn)
+        .await?;
+        Ok(())
+    }
+
+    async fn query_id_room_with_start_time(
+        &mut self,
+        id: &str,
+        room: &str,
+    ) -> DBResult<Option<Contract>> {
+        sqlx::query_as(r#"SELECT * FROM "player_contract" WHERE "id" = ? AND "room" = ? AND "start_time" IS NOT NULL LIMIT 1"#)
+            .bind(id)
+            .bind(room)
+            .fetch_optional(&mut self.conn)
+            .await
     }
 
     pub async fn query_contract(&mut self, ei: &str) -> DBResult<Vec<Contract>> {
@@ -895,7 +930,6 @@ pub enum DatabaseEvent {
         id: String,
         room: String,
         ei: String,
-        start_time: f64,
         finished: bool
     },
     ContractUpdate {
@@ -903,6 +937,11 @@ pub enum DatabaseEvent {
         room: String,
         ei: String,
         finished: bool,
+    },
+    ContractStartTimeUpdate {
+        id: String,
+        room: String,
+        start_time: f64,
     },
     #[ret(Option<ContractCache>)]
     ContractCacheQuery{
@@ -1107,7 +1146,6 @@ impl DatabaseHandle {
                 id,
                 room,
                 ei,
-                start_time,
                 finished,
             } => {
                 if let Some(contract) = database.query_single_contract(&id, &ei).await? {
@@ -1118,7 +1156,7 @@ impl DatabaseHandle {
                     }
                 } else {
                     database
-                        .insert_user_contract(&id, &room, &ei, start_time, finished)
+                        .insert_user_contract(&id, &room, &ei, finished)
                         .await?;
                 }
             }
@@ -1157,6 +1195,15 @@ impl DatabaseHandle {
                 __private_sender
                     .send(database.query_contract_cache(&id, &room).await?)
                     .ok();
+            }
+            DatabaseEvent::ContractStartTimeUpdate {
+                id,
+                room,
+                start_time,
+            } => {
+                database
+                    .set_contract_start_time(&id, &room, start_time)
+                    .await?;
             }
         }
         Ok(())

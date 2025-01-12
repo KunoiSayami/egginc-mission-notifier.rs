@@ -251,7 +251,6 @@ impl Monitor {
                     contract.identifier().into(),
                     local_contract.coop_identifier().into(),
                     ei.into(),
-                    contract.start_time(),
                     true,
                 )
                 .await;
@@ -288,6 +287,24 @@ impl Monitor {
                     contract.cleared_for_exit(),
                 )
                 .await;
+            if let Some(spec) = database
+                .contract_query_spec(contract.contract_identifier().into())
+                .await
+                .flatten()
+            {
+                if let Some(spec) = spec.get(&contract.grade()) {
+                    database
+                        .contract_start_time_update(
+                            contract.contract_identifier().into(),
+                            contract.coop_identifier().into(),
+                            kstool::time::get_current_second() as f64
+                                - (spec.length()
+                                    - contract.seconds_remaining()
+                                    - contract.seconds_since_all_goals_achieved()),
+                        )
+                        .await;
+                }
+            }
             log::trace!(
                 "{ei} found online contract {} {} {}",
                 contract.contract_identifier(),

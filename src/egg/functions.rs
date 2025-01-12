@@ -105,16 +105,7 @@ pub fn build_coop_status_request(contract_id: &str, coop_id: &str, ei: Option<St
 // Source: https://github.com/carpetsage/egg/blob/78cd2bdd7e020a3364e5575884135890cc01105c/lib/api/index.ts
 pub fn build_first_contract_request(ei: String) -> String {
     let request = proto::EggIncFirstContactRequest {
-        rinfo: Some(proto::BasicRequestInfo {
-            ei_user_id: Some("".into()),
-            client_version: Some(VERSION_NUM),
-            version: Some(VERSION.into()),
-            build: Some(BUILD.into()),
-            platform: Some(PLATFORM_STRING.into()),
-            country: None,
-            language: None,
-            debug: Some(false),
-        }),
+        rinfo: build_basic_info(None),
         ei_user_id: Some(ei),
         user_id: None,
         game_services_id: None,
@@ -177,4 +168,15 @@ pub async fn request(
         .error_for_status()?;
     let data = decode_data(&resp.text().await?, false)?;
     Ok(data)
+}
+
+pub fn grade_to_big_g(grade: proto::contract::PlayerGrade) -> f64 {
+    match grade {
+        proto::contract::PlayerGrade::GradeUnset => 1.0,
+        proto::contract::PlayerGrade::GradeC => 1.0,
+        proto::contract::PlayerGrade::GradeB => 2.0,
+        proto::contract::PlayerGrade::GradeA => 3.5,
+        proto::contract::PlayerGrade::GradeAa => 5.0,
+        proto::contract::PlayerGrade::GradeAaa => 7.0,
+    }
 }

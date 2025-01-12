@@ -6,12 +6,12 @@ use std::{collections::HashMap, sync::LazyLock};
 use crate::{
     bot::replace_all,
     egg::functions::{build_coop_status_request, parse_num_with_unit},
-    types::{fmt_time_delta, ContractSpec},
+    types::{fmt_time_delta, timestamp_to_string, ContractSpec},
 };
 
 use super::{
     definitions::{API_BACKEND, UNIT},
-    functions::decode_data,
+    functions::{decode_data, grade_to_big_g},
     proto::{self, FarmProductionParams},
 };
 
@@ -145,20 +145,24 @@ fn calc_total_score(
 ) -> String {
     let pu = parse_num_with_unit;
     let s2h = |value: f64| value * 3600.0;
+
+    let mut output = vec![];
     let (completion_time, expect_remain_time, remain_time) = if !coop.all_goals_achieved() {
         let remain = goal3 - coop.total_amount();
         let (total_elr, offline_egg) = coop
             .contributors
             .iter()
             .filter(|x| x.production_params.is_some() && x.farm_info.is_some())
-            .fold((0.0, 0.0), |(mut acc, mut acc2), x| {
-                let elr = x.production_params.as_ref().unwrap().elr();
-                acc += elr;
+            .fold((0.001, 0.0), |(mut acc, mut acc2), x| {
+                let farm_prams = x.production_params.as_ref().unwrap();
+                let farm_elr = farm_prams.elr() * farm_prams.farm_population();
+                acc += farm_elr;
                 // offline laying
-                acc2 += x.farm_info.as_ref().unwrap().timestamp().abs() * elr;
+                acc2 += x.farm_info.as_ref().unwrap().timestamp().abs() * farm_elr;
                 (acc, acc2)
             });
-        let expect_remain_time = (remain - offline_egg) / total_elr / 0.8;
+        //log::trace!("{remain} {offline_egg} {total_elr}");
+        let expect_remain_time = (remain - offline_egg) / total_elr;
         (
             coop_total_time - coop.seconds_remaining() + expect_remain_time,
             expect_remain_time,
@@ -172,16 +176,18 @@ fn calc_total_score(
         )
     };
 
-    let big_g = match coop.grade() as proto::contract::PlayerGrade {
-        proto::contract::PlayerGrade::GradeUnset => 1.0,
-        proto::contract::PlayerGrade::GradeC => 1.0,
-        proto::contract::PlayerGrade::GradeB => 2.0,
-        proto::contract::PlayerGrade::GradeA => 3.5,
-        proto::contract::PlayerGrade::GradeAa => 5.0,
-        proto::contract::PlayerGrade::GradeAaa => 7.0,
-    };
+    if expect_remain_time > 0.0 {
+        output.push(format!(
+            "Expect completion time: {}",
+            replace_all(&timestamp_to_string(
+                (kstool::time::get_current_second() as f64 + completion_time) as i64
+            ))
+        ));
+    }
 
-    let mut output = vec![];
+    //log::trace!("Completion time: {completion_time}, Expect remain time: {expect_remain_time}, Remain time: {remain_time}" );
+
+    let big_g = grade_to_big_g(coop.grade());
 
     for player in &coop.contributors {
         let Some(ref production) = player.production_params else {
@@ -200,12 +206,18 @@ fn calc_total_score(
             completion_time,
             expect_remain_time,
             remain_time,
-        );
+        )
+        .abs();
+        /* print!(
+            "Player: {} completion time {completion_time}",
+            player.user_name()
+        ); */
         output.push(format!(
-            "{} elr: {} shipped: {}  {score:.2}",
+            "*{}* elr: _{}_ shipped: _{}_ score: _{}_",
             replace_all(player.user_name()),
             replace_all(&pu(s2h(production.elr() * production.farm_population()))),
             replace_all(&pu(player.production_params.as_ref().unwrap().delivered())),
+            score as i64
         ));
     }
     output.join("\n")
@@ -247,12 +259,12 @@ fn calc_score(
         * big_g
         * big_c
         * (1.0 + coop_total_time / 86400.0 / 3.0)
-        * (1.0 + 4.0 * (remain_time / coop_total_time).powi(3))
+        * (1.0 + 4.0 * (1.0 - completion_time / coop_total_time).powi(3))
     //* (1.0 + (big_b + big_r + big_t) / 100.0)
 }
 
-pub fn decode_2(spec: ContractSpec, data: &[u8]) -> anyhow::Result<String> {
-    let res: proto::ContractCoopStatusResponse = decode_data(data, true)?;
+pub fn decode_2(spec: ContractSpec, data: &[u8], authorized: bool) -> anyhow::Result<String> {
+    let res: proto::ContractCoopStatusResponse = decode_data(data, authorized)?;
     let Some(grade_spec) = spec.get(&res.grade()) else {
         return Err(anyhow!("Spec not found"));
     };
