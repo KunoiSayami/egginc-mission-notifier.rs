@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use futures_util::StreamExt as _;
 use log::error;
@@ -233,6 +233,8 @@ pub mod v4 {
 
         CREATE TABLE "contract" (
             "id"	TEXT NOT NULL,
+            "size"  INTEGER NOT NULL,
+            "token_time" REAL NOT NULL,
             "body"	BLOB NOT NULL,
             PRIMARY KEY("id")
         );
@@ -268,7 +270,7 @@ pub mod v4 {
         CREATE TABLE "contract" (
             "id"	TEXT NOT NULL,
             "size"  INTEGER NOT NULL,
-            "token_time" INTEGER NOT NULL,
+            "token_time" REAL NOT NULL,
             "body"	BLOB NOT NULL,
             PRIMARY KEY("id")
         );
@@ -506,7 +508,7 @@ impl Database {
         let account = self.query_account(ei).await?;
 
         if account.is_none() {
-            sqlx::query(r#"INSERT INTO "account" VALUES (?, NULL, 0, 0)"#)
+            sqlx::query(r#"INSERT INTO "account" VALUES (?, NULL, 0, 0, 0)"#)
                 .bind(ei)
                 .execute(&mut self.conn)
                 .await?;
@@ -555,9 +557,9 @@ impl Database {
         Ok(())
     }
 
-    pub async fn set_account_contract_track(&mut self, ei: &str, disabled: bool) -> DBResult<()> {
-        sqlx::query(r#"UPDATE "account" SET "contract_track" = ?, "disabled" = ? WHERE "ei" = ? "#)
-            .bind(disabled)
+    pub async fn set_account_contract_trace(&mut self, ei: &str, enabled: bool) -> DBResult<()> {
+        sqlx::query(r#"UPDATE "account" SET "contract_trace" = ? WHERE "ei" = ? "#)
+            .bind(enabled)
             .bind(ei)
             .execute(&mut self.conn)
             .await?;
@@ -679,13 +681,20 @@ impl Database {
         Ok(())
     }
 
-    pub async fn set_contract(&mut self, id: &str, ei: &str, finished: bool) -> DBResult<()> {
+    pub async fn set_contract(
+        &mut self,
+        id: &str,
+        ei: &str,
+        room: &str,
+        finished: bool,
+    ) -> DBResult<()> {
         sqlx::query(
             r#"UPDATE "player_contract" 
-            SET "finished" = ? 
-            WHERE "id" = ? AND "ei" = ? "#,
+            SET "finished" = ?, "room" = ?
+            WHERE "id" = ? AND "belong" = ? "#,
         )
         .bind(finished)
+        .bind(room)
         .bind(id)
         .bind(ei)
         .execute(&mut self.conn)
@@ -721,7 +730,7 @@ impl Database {
         body: &[u8],
         timestamp: i64,
     ) -> DBResult<()> {
-        sqlx::query(r#"INSERT INTO "contract_cache" VALUES (?, ?, ?, ?, ?)"#)
+        sqlx::query(r#"INSERT INTO "contract_cache" VALUES (?, ?, ?, ?)"#)
             .bind(id)
             .bind(room)
             .bind(body)
@@ -730,9 +739,17 @@ impl Database {
             .await?;
         Ok(())
     }
-    pub async fn insert_contract_spec(&mut self, id: &str, body: &[u8]) -> DBResult<()> {
-        sqlx::query(r#"INSERT INTO "contract" VALUES (?, ?)"#)
+    pub async fn insert_contract_spec(
+        &mut self,
+        id: &str,
+        size: i64,
+        token_time: f64,
+        body: &[u8],
+    ) -> DBResult<()> {
+        sqlx::query(r#"INSERT INTO "contract" VALUES (?, ?, ?, ?)"#)
             .bind(id)
+            .bind(size)
+            .bind(token_time)
             .bind(body)
             .execute(&mut self.conn)
             .await?;
@@ -818,7 +835,7 @@ pub enum DatabaseEvent {
 
     AccountContractUpdate{
         ei: String,
-        disabled: bool,
+        enabled: bool,
     },
 
     AccountNameUpdate {
@@ -883,6 +900,7 @@ pub enum DatabaseEvent {
     },
     ContractUpdate {
         id: String,
+        room: String,
         ei: String,
         finished: bool,
     },
@@ -1053,13 +1071,28 @@ impl DatabaseHandle {
                 }
             }
             DatabaseEvent::ContractSpecInsert(contract_spec) => {
+                if database
+                    .query_contract_spec(contract_spec.id())
+                    .await?
+                    .is_some()
+                {
+                    return Ok(());
+                }
+
                 let id = contract_spec.id().to_string();
-                let Ok(body) = serde_cbor::to_vec(&contract_spec.into_inner())
+                let Ok(body) = minicbor_serde::to_vec(&contract_spec.get_inner())
                     .inspect_err(|e| log::error!("Convert CBOR error {e:?}"))
                 else {
                     return Ok(());
                 };
-                database.insert_contract_spec(&id, &body).await?;
+                database
+                    .insert_contract_spec(
+                        &id,
+                        contract_spec.max_coop_size(),
+                        contract_spec.token_time(),
+                        &body,
+                    )
+                    .await?;
             }
             DatabaseEvent::ContractQuerySingle {
                 id,
@@ -1077,15 +1110,28 @@ impl DatabaseHandle {
                 start_time,
                 finished,
             } => {
-                database
-                    .insert_user_contract(&id, &room, &ei, start_time, finished)
-                    .await?;
+                if let Some(contract) = database.query_single_contract(&id, &ei).await? {
+                    if contract.finished() != finished || !contract.room().eq(&room) {
+                        database
+                            .set_contract(&id, &ei, contract.room(), finished)
+                            .await?;
+                    }
+                } else {
+                    database
+                        .insert_user_contract(&id, &room, &ei, start_time, finished)
+                        .await?;
+                }
             }
-            DatabaseEvent::ContractUpdate { id, ei, finished } => {
-                database.set_contract(&id, &ei, finished).await?;
+            DatabaseEvent::ContractUpdate {
+                id,
+                room,
+                ei,
+                finished,
+            } => {
+                database.set_contract(&id, &ei, &room, finished).await?;
             }
-            DatabaseEvent::AccountContractUpdate { ei, disabled } => {
-                database.set_account_contract_track(&ei, disabled).await?;
+            DatabaseEvent::AccountContractUpdate { ei, enabled } => {
+                database.set_account_contract_trace(&ei, enabled).await?;
             }
             DatabaseEvent::AccountQueryContract {
                 ei,
@@ -1121,9 +1167,10 @@ impl DatabaseHandle {
             if let DatabaseEvent::Terminate = event {
                 break;
             }
+            let event_type = format!("{event:?}");
             Self::handle_event(&mut database, event)
                 .await
-                .inspect_err(|e| error!("Sqlite error: {e:?}"))
+                .inspect_err(|e| error!("Sqlite request {event_type:?} error: {e:?}"))
                 .ok();
         }
         database.close().await?;

@@ -186,7 +186,7 @@ impl Account {
     }
 
     pub fn force_fetch(&self, current: i64) -> bool {
-        self.contract_trace && self.last_fetch - current > 4 * 3600
+        self.contract_trace && current - self.last_fetch > 4 * 3600
     }
 
     pub fn contract_trace(&self) -> bool {
@@ -210,11 +210,12 @@ impl std::fmt::Display for Account {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} *{}* {} {}",
+            "{} *{}* {} {}{}",
             self.ei,
             replace_all(self.name()),
             replace_all(&timestamp_to_string(self.last_fetch)),
-            return_tf_emoji(!self.disabled)
+            return_tf_emoji(!self.disabled),
+            self.contract_trace.then(|| " 📋").unwrap_or("")
         )
     }
 }
@@ -380,8 +381,8 @@ impl ContractSpec {
         }
     }
 
-    pub fn into_inner(self) -> Vec<ContractGradeSpec> {
-        self.spec.into_values().collect_vec()
+    pub fn get_inner(&self) -> Vec<ContractGradeSpec> {
+        self.spec.clone().into_values().collect_vec()
     }
 
     pub fn id(&self) -> &str {
@@ -412,7 +413,7 @@ impl FromRow<'_, SqliteRow> for ContractSpec {
             max_coop_size: row.try_get(1)?,
             token_time: row.try_get(2)?,
             spec: {
-                let v: Vec<ContractGradeSpec> = serde_cbor::from_slice(row.try_get(3)?)
+                let v: Vec<ContractGradeSpec> = minicbor_serde::from_slice(row.try_get(3)?)
                     .inspect_err(|e| log::error!("Deserialize CBOR data error: {e:?}"))
                     .unwrap();
                 v.into_iter().map(|x| x.into_kv()).collect()

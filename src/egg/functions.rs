@@ -170,7 +170,7 @@ pub async fn request(
         .into_iter()
         .collect::<HashMap<_, _>>();
     let resp = client
-        .post(API_BACKEND)
+        .post(format!("{API_BACKEND}/ei/bot_first_contact"))
         .form(&form)
         .send()
         .await?

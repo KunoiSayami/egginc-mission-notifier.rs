@@ -261,14 +261,17 @@ impl Monitor {
                 local_contract.coop_identifier()
             );
         }
+
         let Some(contracts) = info
             .backup
             .as_ref()
             .and_then(|x| x.contracts.as_ref())
             .map(|x| &x.current_coop_statuses)
         else {
+            //log::trace!("No coop status found in {ei}");
             return;
         };
+
         for contract in contracts {
             database
                 .contract_cache_insert(
@@ -280,6 +283,7 @@ impl Monitor {
             database
                 .contract_update(
                     contract.contract_identifier().into(),
+                    contract.coop_identifier().into(),
                     ei.into(),
                     contract.cleared_for_exit(),
                 )
@@ -403,7 +407,7 @@ impl Monitor {
                 || (!account.force_fetch(current_time as i64)
                     && current_time as i64 - account.last_fetch() < (*FETCH_PERIOD.get().unwrap()))
             {
-                //log::debug!("Skip user {}", account.ei());
+                //log::trace!("Skip user {}", account.ei());
                 continue;
             }
             let ret = Self::handle_each_account(

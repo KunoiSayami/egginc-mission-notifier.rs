@@ -9,14 +9,15 @@ async-trait = "0.1"
 base64 = "0.22.1"
 chrono = "0.4"
 chrono-tz = "0.10"
-serde_cbor = "0.11.2"
 clap = { version = "4", features = ["cargo"] }
 env_logger = "0.11"
+flate2 = { version = "1.0.35", features = ["zlib"] }
 futures-util = "0.3"
 itertools = "0.14"
 kstool = "0.2"
 kstool-helper-generator = "0.4"
 log = "0.4"
+minicbor-serde = { version = "0.3.2", features = ["alloc"] }
 prost = "0.13"
 rand = "0.8"
 regex = "1"
@@ -33,7 +34,6 @@ teloxide = { version = "0.13", default-features = false, features = [
 ] }
 tokio = { version = "1", features = ["full"] }
 toml = "0.8"
-flate2 = { version = "1.0.35", features = ["zlib"] }
 
 [build-dependencies]
 prost-build = "0.13.4"

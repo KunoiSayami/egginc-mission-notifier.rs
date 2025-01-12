@@ -180,7 +180,9 @@ mod admin {
                 bot.send_message(msg.chat.id, "New cache inserted").await
             }
             AdminCommand::ContractToggle { ei, enabled } => {
-                arg.database().account_update(ei.into(), !enabled).await;
+                arg.database()
+                    .account_contract_update(ei.into(), enabled)
+                    .await;
                 bot.send_message(
                     msg.chat.id,
                     format!(

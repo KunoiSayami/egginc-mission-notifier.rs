@@ -10,14 +10,13 @@ use bot::{bot, bot_run};
 use clap::{arg, ArgMatches};
 use config::Config;
 use database::DatabaseHandle;
-use egg::{ monitor::Monitor,};
+use egg::monitor::Monitor;
 use reqwest::ClientBuilder;
 
 static FETCH_PERIOD: OnceLock<i64> = OnceLock::new();
 static CHECK_PERIOD: OnceLock<i64> = OnceLock::new();
 const CACHE_REFRESH_PERIOD: u64 = 300;
 const CACHE_REQUEST_OFFSET: u64 = CACHE_REFRESH_PERIOD * 2;
-
 
 //const STATIC_DATA: &[u8] = include_bytes!("../out1.data");
 
