@@ -236,6 +236,7 @@ impl Monitor {
         let Some(contracts) = info.backup.as_ref().and_then(|x| x.contracts.as_ref()) else {
             return;
         };
+        let mut log_output = vec![];
 
         for local_contract in contracts.contracts.iter().chain(contracts.archive.iter()) {
             let Some(ref contract) = local_contract.contract else {
@@ -254,20 +255,27 @@ impl Monitor {
                     v,
                 ))
                 .await;
-            database
+            if database
                 .account_insert_contract(
                     contract.identifier().into(),
                     local_contract.coop_identifier().into(),
                     ei.into(),
                     true,
                 )
-                .await;
-            log::trace!(
-                "{ei} found contract {} {}",
+                .await
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            log_output.push(format!(
+                "{}: {}",
                 contract.identifier(),
                 local_contract.coop_identifier()
-            );
+            ));
         }
+        log::trace!("{ei} found contract: {}", log_output.join("; "));
+
+        log_output.clear();
 
         let Some(contracts) = info
             .backup
@@ -313,13 +321,17 @@ impl Monitor {
                         .await;
                 }
             }
-            log::trace!(
-                "{ei} found online contract {} {} {}",
+            log_output.push(format!(
+                "{}: {}{}",
                 contract.contract_identifier(),
                 contract.coop_identifier(),
-                contract.cleared_for_exit()
-            );
+                contract
+                    .cleared_for_exit()
+                    .then(|| " finished")
+                    .unwrap_or("")
+            ))
         }
+        log::trace!("{ei} found online contract: {}", log_output.join("; "))
     }
 
     async fn handle_each_account(
@@ -360,7 +372,7 @@ impl Monitor {
             //bot.send_message(user.user().into(), "Query mission failure");
         };
 
-        log::trace!("{}({}) missions {missions:?}", account.name(), account.ei());
+        //log::trace!("{}({}) missions {missions:?}", account.name(), account.ei());
 
         let mut pending = Vec::new();
 
@@ -386,7 +398,7 @@ impl Monitor {
                 )
                 .await;
             pending.push(format!(
-                "Found new spaceship: {} \\[{}\\] \\(_{}_\\), launch time: {}, land time: {}",
+                "{} \\[{}\\] \\(_{}_\\), launch time: {}, land time: {}",
                 replace_all(mission.name()),
                 SpaceShip::duration_type_to_str(mission.duration_type()),
                 replace_all(mission.id()),
@@ -404,7 +416,11 @@ impl Monitor {
         for user in account_map.chat_ids() {
             bot.send_message(
                 user,
-                format!("*{}*:\n{}", replace_all(account.name()), pending.join("\n")),
+                format!(
+                    "*{}* Found new spaceship:\n{}",
+                    replace_all(account.name()),
+                    pending.join("\n")
+                ),
             )
             .await?;
         }

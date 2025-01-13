@@ -694,7 +694,7 @@ impl Database {
             .flatten();
 
         sqlx::query(
-            r#"UPDATE "player_contract" 
+            r#"UPDATE "player_contract"
             SET "finished" = ?, "room" = ?, "start_time" = ?
             WHERE "id" = ? AND "belong" = ? "#,
         )
@@ -739,8 +739,8 @@ impl Database {
 
     pub async fn query_contract(&mut self, ei: &str) -> DBResult<Vec<Contract>> {
         sqlx::query_as(
-            r#"SELECT * FROM "player_contract" 
-            WHERE "belong" = ? 
+            r#"SELECT * FROM "player_contract"
+            WHERE "belong" = ?
             ORDER BY "start_time" DESC LIMIT 10"#,
         )
         .bind(ei)
@@ -750,7 +750,7 @@ impl Database {
 
     pub async fn query_contract_spec(&mut self, id: &str) -> DBResult<Option<ContractSpec>> {
         sqlx::query_as(
-            r#"SELECT * FROM "contract" 
+            r#"SELECT * FROM "contract"
             WHERE "id" = ?"#,
         )
         .bind(id)
@@ -926,6 +926,7 @@ pub enum DatabaseEvent {
     AccountQueryContract {
         ei: String,
     },
+    #[ret(bool)]
     AccountInsertContract {
         id: String,
         room: String,
@@ -949,6 +950,7 @@ pub enum DatabaseEvent {
         room: String
     },
     ContractCacheInsert{id: String, room: String, cache: Vec<u8>},
+    #[ret(bool)]
     ContractSpecInsert(ContractSpec),
 
     Terminate,
@@ -1109,12 +1111,13 @@ impl DatabaseHandle {
                         .await?;
                 }
             }
-            DatabaseEvent::ContractSpecInsert(contract_spec) => {
+            DatabaseEvent::ContractSpecInsert(contract_spec, sender) => {
                 if database
                     .query_contract_spec(contract_spec.id())
                     .await?
                     .is_some()
                 {
+                    sender.send(false).ok();
                     return Ok(());
                 }
 
@@ -1122,6 +1125,7 @@ impl DatabaseHandle {
                 let Ok(body) = minicbor_serde::to_vec(&contract_spec.get_inner())
                     .inspect_err(|e| log::error!("Convert CBOR error {e:?}"))
                 else {
+                    sender.send(false).ok();
                     return Ok(());
                 };
                 database
@@ -1132,6 +1136,7 @@ impl DatabaseHandle {
                         &body,
                     )
                     .await?;
+                sender.send(true).ok();
             }
             DatabaseEvent::ContractQuerySingle {
                 id,
@@ -1147,17 +1152,21 @@ impl DatabaseHandle {
                 room,
                 ei,
                 finished,
+                __private_sender,
             } => {
                 if let Some(contract) = database.query_single_contract(&id, &ei).await? {
-                    if contract.finished() != finished || !contract.room().eq(&room) {
+                    let changed = contract.finished() != finished || !contract.room().eq(&room);
+                    if changed {
                         database
                             .set_contract(&id, &ei, contract.room(), finished)
                             .await?;
                     }
+                    __private_sender.send(changed).ok();
                 } else {
                     database
                         .insert_user_contract(&id, &room, &ei, finished)
                         .await?;
+                    __private_sender.send(true).ok();
                 }
             }
             DatabaseEvent::ContractUpdate {
