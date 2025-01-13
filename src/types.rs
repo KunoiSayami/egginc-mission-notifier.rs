@@ -443,6 +443,10 @@ impl ContractCache {
     pub fn recent(&self) -> bool {
         (kstool::time::get_current_second() as i64 - self.timestamp) < 30 * 60
     }
+
+    pub fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 impl From<ContractCache> for Vec<u8> {

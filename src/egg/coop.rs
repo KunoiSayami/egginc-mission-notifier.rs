@@ -187,7 +187,7 @@ fn calc_total_score(
 
     if expect_remain_time > 0.0 {
         output.push(format!(
-            "Expect completion time: {}, {}",
+            "Expect complete time: {}\\({}\\)",
             replace_all(&timestamp_to_string(
                 (kstool::time::get_current_second() as f64 + expect_remain_time) as i64
             )),

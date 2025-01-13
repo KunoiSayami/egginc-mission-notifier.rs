@@ -11,8 +11,12 @@ use teloxide::{
     adaptors::DefaultParseMode,
     dispatching::{HandlerExt as _, UpdateFilterExt as _},
     dptree,
+    payloads::SendMessageSetters,
     prelude::{Dispatcher, Requester as _, RequesterExt as _},
-    types::{ChatId, Message, ParseMode, Update},
+    types::{
+        CallbackQuery, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message, ParseMode,
+        Update,
+    },
     utils::command::BotCommands,
     Bot,
 };
@@ -260,7 +264,7 @@ enum ContractCommand {
 }
 
 impl ContractCommand {
-    fn parser(input: String) -> Option<Self> {
+    fn parse(input: String) -> Option<Self> {
         let Some((first, second)) = input.split_once(' ') else {
             return None;
         };
@@ -286,6 +290,20 @@ impl ContractCommand {
                 _ => None,
             }
         }
+    }
+
+    fn keyboard(&self) -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new(match &self {
+            ContractCommand::Calc { ei, id } => [[InlineKeyboardButton::callback(
+                "Refresh",
+                format!("contract calc {ei} {id}"),
+            )]],
+            ContractCommand::CalcRoom { id, room } => [[InlineKeyboardButton::callback(
+                "Refresh",
+                format!("contract room {id} {room}"),
+            )]],
+            _ => unreachable!(),
+        })
     }
 }
 
@@ -375,15 +393,29 @@ pub async fn bot_run(
                         }
                         Command::Admin { line } => handle_admin_command(bot, arg, msg, line).await,
                         Command::Contract { cmd } => {
-                            route_contract_command(bot, arg, msg, cmd).await
+                            route_contract_command(bot, arg, msg.chat.id, cmd).await
                         }
                     }
                 },
             ),
     );
-    let dispatcher = Dispatcher::builder(bot, dptree::entry().branch(handle_message))
-        .dependencies(dptree::deps![arg])
-        .default_handler(|_| async {});
+
+    let handle_callback_query = Update::filter_callback_query()
+        .filter(|q: CallbackQuery| q.data.is_some())
+        .endpoint(
+            |q: CallbackQuery, bot: BotType, arg: Arc<NecessaryArg>| async move {
+                handle_callback_query(bot, q, arg).await
+            },
+        );
+
+    let dispatcher = Dispatcher::builder(
+        bot,
+        dptree::entry()
+            .branch(handle_message)
+            .branch(handle_callback_query),
+    )
+    .dependencies(dptree::deps![arg])
+    .default_handler(|_| async {});
 
     #[cfg(not(debug_assertions))]
     dispatcher.enable_ctrlc_handler().build().dispatch().await;
@@ -611,18 +643,18 @@ async fn handle_missions_command(
 async fn route_contract_command(
     bot: BotType,
     arg: Arc<NecessaryArg>,
-    msg: Message,
+    chat_id: ChatId,
     cmd: String,
 ) -> anyhow::Result<()> {
-    let Some(cmd) = ContractCommand::parser(cmd) else {
-        bot.send_message(msg.chat.id, "Invalid contract command\\.")
+    let Some(cmd) = ContractCommand::parse(cmd) else {
+        bot.send_message(chat_id, "Invalid contract command\\.")
             .await?;
         return Ok(());
     };
     match cmd {
-        ContractCommand::List { ei } => handle_list_contracts(bot, arg, msg, ei).await,
+        ContractCommand::List { ei } => handle_list_contracts(bot, arg, chat_id, ei).await,
         ContractCommand::Calc { .. } | ContractCommand::CalcRoom { .. } => {
-            handle_calc_score(bot, arg, msg, &cmd).await
+            handle_calc_score(bot, arg, chat_id, &cmd).await
         }
     }
 }
@@ -630,19 +662,19 @@ async fn route_contract_command(
 async fn handle_list_contracts(
     bot: BotType,
     arg: Arc<NecessaryArg>,
-    msg: Message,
+    chat_id: ChatId,
     ei: String,
 ) -> anyhow::Result<()> {
-    if !arg.check_admin(msg.chat.id)
+    if !arg.check_admin(chat_id)
         && !arg
             .database()
-            .account_query(Some(msg.chat.id.0))
+            .account_query(Some(chat_id.0))
             .await
             .ok_or_else(|| anyhow!("Query user error"))?
             .iter()
             .any(|x| x.ei().eq(&ei))
     {
-        bot.send_message(msg.chat.id, "Permission denied").await?;
+        bot.send_message(chat_id, "Permission denied").await?;
         return Ok(());
     }
 
@@ -672,9 +704,9 @@ async fn handle_list_contracts(
         .join("\n");
 
     if res.is_empty() {
-        bot.send_message(msg.chat.id, "Contract not found").await?;
+        bot.send_message(chat_id, "Contract not found").await?;
     } else {
-        bot.send_message(msg.chat.id, res).await?;
+        bot.send_message(chat_id, res).await?;
     }
 
     Ok(())
@@ -683,15 +715,15 @@ async fn handle_list_contracts(
 async fn handle_calc_score(
     bot: BotType,
     arg: Arc<NecessaryArg>,
-    msg: Message,
+    chat_id: ChatId,
     event: &ContractCommand,
 ) -> anyhow::Result<()> {
-    let is_admin = arg.check_admin(msg.chat.id);
+    let is_admin = arg.check_admin(chat_id);
 
     match event {
         ContractCommand::CalcRoom { .. } => {
             if !is_admin {
-                bot.send_message(msg.chat.id, "Permission denied").await?;
+                bot.send_message(chat_id, "Permission denied").await?;
 
                 return Ok(());
             }
@@ -700,13 +732,13 @@ async fn handle_calc_score(
             if !is_admin
                 && !arg
                     .database()
-                    .account_query(Some(msg.chat.id.0))
+                    .account_query(Some(chat_id.0))
                     .await
                     .ok_or_else(|| anyhow!("Query user error"))?
                     .iter()
                     .any(|x| x.ei().eq(ei))
             {
-                bot.send_message(msg.chat.id, "Permission denied").await?;
+                bot.send_message(chat_id, "Permission denied").await?;
 
                 return Ok(());
             }
@@ -714,6 +746,23 @@ async fn handle_calc_score(
         _ => unreachable!(),
     }
 
+    match process_calc(arg, event).await {
+        Ok(res) => {
+            bot.send_message(chat_id, res)
+                .reply_markup(event.keyboard())
+                .await
+        }
+        Err(e) => {
+            log::error!("Calc function error: {e:?}");
+            bot.send_message(chat_id, "Got error in calc score, check console\\.")
+                .await
+        }
+    }?;
+
+    Ok(())
+}
+
+async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow::Result<String> {
     let contract_id = match event {
         ContractCommand::Calc { id, .. } | ContractCommand::CalcRoom { id, .. } => id,
         _ => unreachable!(),
@@ -725,12 +774,10 @@ async fn handle_calc_score(
         .await
         .ok_or_else(|| anyhow!("Query contract spec error"))?
     else {
-        bot.send_message(msg.chat.id, "Contract spec not found")
-            .await?;
-        return Ok(());
+        return Err(anyhow!("Contract spec not found"));
     };
 
-    let body = match event {
+    let (timestamp, body) = match event {
         ContractCommand::Calc { ei, .. } => {
             let Some(user_contract) = arg
                 .database()
@@ -738,8 +785,7 @@ async fn handle_calc_score(
                 .await
                 .ok_or_else(|| anyhow!("Query user contract room error"))?
             else {
-                bot.send_message(msg.chat.id, "User room not found").await?;
-                return Ok(());
+                return Err(anyhow!("User room not found"));
             };
 
             let Some(contract_cache) = arg
@@ -748,11 +794,9 @@ async fn handle_calc_score(
                 .await
                 .ok_or_else(|| anyhow!("Query contract cache error"))?
             else {
-                bot.send_message(msg.chat.id, "Contract cache not found")
-                    .await?;
-                return Ok(());
+                return Err(anyhow!("Contract cache not found"));
             };
-            contract_cache.extract()
+            (contract_cache.timestamp(), contract_cache.extract())
         }
         ContractCommand::CalcRoom { room, .. } => {
             match arg
@@ -761,7 +805,7 @@ async fn handle_calc_score(
                 .await
                 .ok_or_else(|| anyhow!("Query contract cache error"))?
             {
-                Some(cache) if cache.recent() => cache.extract(),
+                Some(cache) if cache.recent() => (cache.timestamp(), cache.extract()),
                 _ => {
                     let client = ClientBuilder::new()
                         .timeout(Duration::from_secs(10))
@@ -773,7 +817,7 @@ async fn handle_calc_score(
                     arg.database()
                         .contract_cache_insert(contract_id.into(), room.into(), bytes.clone())
                         .await;
-                    bytes
+                    (kstool::time::get_current_second() as i64, bytes)
                 }
             }
         }
@@ -781,14 +825,40 @@ async fn handle_calc_score(
     };
 
     let res = decode_and_calc_score(contract_spec, &body, false)?;
+    Ok(format!(
+        "{res}\n\nContract last update: {}\nLast score update: {}\nThis score not included your teamwork score\\.",
+        replace_all(&timestamp_to_string(kstool::time::get_current_second() as i64)),
+        replace_all(&timestamp_to_string(timestamp))
+    ))
+}
 
-    if !res.is_empty() {
-        bot.send_message(
-            msg.chat.id,
-            format!("{res}\n\nThis score not included your teamwork score\\."),
-        )
-        .await?;
+async fn handle_callback_query(
+    bot: BotType,
+    msg: CallbackQuery,
+    arg: Arc<NecessaryArg>,
+) -> anyhow::Result<()> {
+    //log::trace!("Callback data: {:?}", msg.data);
+    let Some((first, second)) = msg.data.as_ref().and_then(|text| text.split_once(' ')) else {
+        bot.answer_callback_query(msg.id).await?;
+        return Ok(());
+    };
+
+    match first {
+        "contract" => {
+            if let Some(msg) = second.contains(' ').then(|| msg.message.as_ref()).flatten() {
+                route_contract_command(bot.clone(), arg, msg.chat().id, second.to_string()).await?;
+                /* if let Ok(result) =
+                    process_calc(arg, &ContractCommand::parse(second.to_string()).unwrap()).await
+                {
+                    bot.edit_message_text(msg.chat().id, msg.id(), result)
+                        .await?;
+                }; */
+                bot.edit_message_reply_markup(msg.chat().id, msg.id())
+                    .await?;
+            }
+        }
+        _ => {}
     }
-
+    bot.answer_callback_query(msg.id).await?;
     Ok(())
 }
