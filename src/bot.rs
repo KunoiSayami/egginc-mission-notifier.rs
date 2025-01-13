@@ -21,7 +21,7 @@ use crate::{
     config::Config,
     database::DatabaseHelper,
     egg::{
-        decode_and_calc_score,
+        decode_and_calc_score, encode_to_byte,
         monitor::{MonitorHelper, LAST_QUERY},
         query_coop_status,
     },
@@ -36,7 +36,7 @@ static TELEGRAM_ESCAPE_RE: LazyLock<regex::Regex> =
 pub static EI_CHECKER_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^EI\d{16}$").unwrap());
 pub static COOP_ID_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"^[\w]+(-[\w\d])*$").unwrap());
+    LazyLock::new(|| regex::Regex::new(r"^[\w]+(-[\w\d]+)*$").unwrap());
 pub static ROOM_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[\w\d\-]+$").unwrap());
 
@@ -55,6 +55,7 @@ mod admin {
         ResetNotify { ei: &'a str, limit: i32 },
         UserToggle { ei: &'a str, enabled: bool },
         ContractToggle { ei: &'a str, enabled: bool },
+        ContractCacheReset { id: &'a str, room: &'a str },
         CacheReset { invalidate: bool },
         CacheInsertFake { ei: &'a str, land_times: Vec<i64> },
         ListUsers,
@@ -67,6 +68,16 @@ mod admin {
             if let Some((first, second)) = value.split_once(' ') {
                 match first {
                     "query" => Ok(Self::Query { ei: Some(second) }),
+                    "reset-contract" => {
+                        if let Some((second1, second2)) = second.split_once(' ') {
+                            Ok(Self::ContractCacheReset {
+                                id: &second1,
+                                room: &second2,
+                            })
+                        } else {
+                            Err("Room id missing")
+                        }
+                    }
                     "reset" => {
                         if let Some((second1, second2)) = second.split_once(' ') {
                             if second1 == "cache" {
@@ -200,6 +211,12 @@ mod admin {
                     ),
                 )
                 .await
+            }
+            AdminCommand::ContractCacheReset { id, room } => {
+                arg.database()
+                    .contract_cache_update_timestamp(id.into(), room.into())
+                    .await;
+                bot.send_message(msg.chat.id, "Timestamp updated").await
             }
         }?;
         Ok(())
@@ -752,11 +769,11 @@ async fn handle_calc_score(
                         .unwrap();
                     let raw = query_coop_status(&client, contract_id, room, None).await?;
 
+                    let bytes = encode_to_byte(&raw);
                     arg.database()
-                        .contract_cache_insert(contract_id.into(), room.into(), raw.clone())
+                        .contract_cache_insert(contract_id.into(), room.into(), bytes.clone())
                         .await;
-
-                    raw
+                    bytes
                 }
             }
         }

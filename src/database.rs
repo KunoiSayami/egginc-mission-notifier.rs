@@ -807,6 +807,20 @@ impl Database {
             .await?;
         Ok(())
     }
+    pub async fn update_contract_cache_timestamp(
+        &mut self,
+        id: &str,
+        room: &str,
+        timestamp: i64,
+    ) -> DBResult<()> {
+        sqlx::query(r#"UPDATE "contract_cache" SET "timestamp" = ? WHERE "id" = ? AND "room" = ?"#)
+            .bind(timestamp)
+            .bind(id)
+            .bind(room)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
 
     pub async fn query_contract_cache(
         &mut self,
@@ -945,11 +959,19 @@ pub enum DatabaseEvent {
         start_time: f64,
     },
     #[ret(Option<ContractCache>)]
-    ContractCacheQuery{
+    ContractCacheQuery {
         id: String,
         room: String
     },
-    ContractCacheInsert{id: String, room: String, cache: Vec<u8>},
+    ContractCacheInsert {
+        id: String,
+        room: String,
+        cache: Vec<u8>,
+    },
+    ContractCacheUpdateTimestamp {
+        id: String,
+        room: String,
+    },
     #[ret(bool)]
     ContractSpecInsert(ContractSpec),
 
@@ -1212,6 +1234,11 @@ impl DatabaseHandle {
             } => {
                 database
                     .set_contract_start_time(&id, &room, start_time)
+                    .await?;
+            }
+            DatabaseEvent::ContractCacheUpdateTimestamp { id, room } => {
+                database
+                    .update_contract_cache_timestamp(&id, &room, 0)
                     .await?;
             }
         }

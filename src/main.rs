@@ -4,14 +4,13 @@ mod database;
 mod egg;
 mod types;
 
-use std::{sync::OnceLock, time::Duration};
+use std::sync::OnceLock;
 
 use bot::{bot, bot_run};
-use clap::{arg, ArgMatches};
+use clap::arg;
 use config::Config;
 use database::DatabaseHandle;
 use egg::monitor::Monitor;
-use reqwest::ClientBuilder;
 
 static FETCH_PERIOD: OnceLock<i64> = OnceLock::new();
 static CHECK_PERIOD: OnceLock<i64> = OnceLock::new();
@@ -57,46 +56,6 @@ fn enable_log(verbose: u8) {
     builder.init();
 }
 
-#[allow(unused)]
-async fn async_router(matches: ArgMatches) -> anyhow::Result<()> {
-    let client = ClientBuilder::new()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .unwrap();
-    match matches.subcommand() {
-        Some(("test", matches)) => {
-            /* query_coop_status(
-                &client,
-                matches.get_one::<String>("contract_id").unwrap(),
-                matches.get_one::<String>("coop_id").unwrap(),
-                matches.get_one::<String>("ei").unwrap(),
-            )
-            .await?; */
-
-            /* query_contract_status(
-                &client,
-                matches.get_one::<String>("contract_id").unwrap(),
-                matches.get_one::<String>("coop_id").unwrap(),
-                egg::proto::contract::PlayerGrade::GradeAaa,
-                matches.get_one::<String>("ei").unwrap(),
-            )
-            .await?;*/
-            /* query_coop_status_basic(
-                &client,
-                matches.get_one::<String>("contract_id").unwrap(),
-                matches.get_one::<String>("coop_id").unwrap(),
-                matches.get_one::<String>("ei").unwrap(),
-                true,
-            )
-            .await?; */
-        }
-        _ => {
-            async_main(matches.get_one::<String>("CONFIG").unwrap()).await?;
-        }
-    }
-    Ok(())
-}
-
 fn main() -> anyhow::Result<()> {
     let matches = clap::command!()
         .args(&[
@@ -110,12 +69,6 @@ fn main() -> anyhow::Result<()> {
                 .value_parser(clap::value_parser!(i64)),
             arg!(-v --verbose ... "More verbose log output"),
         ])
-        .subcommand(clap::Command::new("test").args(&[
-            arg!(<contract_id> "Contract id"),
-            arg!(<coop_id> "Coop id"),
-            arg!(<ei> "Ei"),
-        ]))
-        .subcommand(clap::Command::new("test2").args(&[arg!(<target> "Target")]))
         .get_matches();
 
     enable_log(matches.get_count("verbose"));
@@ -137,5 +90,5 @@ fn main() -> anyhow::Result<()> {
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async_router(matches))
+        .block_on(async_main(matches.get_one::<String>("CONFIG").unwrap()))
 }

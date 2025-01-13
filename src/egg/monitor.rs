@@ -314,9 +314,7 @@ impl Monitor {
                             contract.contract_identifier().into(),
                             contract.coop_identifier().into(),
                             kstool::time::get_current_second() as f64
-                                - (spec.length()
-                                    - contract.seconds_remaining()
-                                    - contract.seconds_since_all_goals_achieved()),
+                                - (spec.length() - contract.seconds_remaining()),
                         )
                         .await;
                 }

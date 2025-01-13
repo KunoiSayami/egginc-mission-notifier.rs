@@ -7,3 +7,4 @@ pub mod proto;
 pub mod types;
 
 pub use coop::{decode_and_calc_score, query_coop_status};
+pub(crate) use functions::encode_to_byte;

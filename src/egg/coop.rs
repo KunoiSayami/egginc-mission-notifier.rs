@@ -109,7 +109,7 @@ pub async fn query_coop_status(
     contract_id: &str,
     coop_id: &str,
     ei: Option<String>,
-) -> anyhow::Result<Vec<u8>> {
+) -> anyhow::Result<proto::ContractCoopStatusResponse> {
     let form = [("data", build_coop_status_request(contract_id, coop_id, ei))]
         .into_iter()
         .collect::<HashMap<_, _>>();
@@ -123,13 +123,13 @@ pub async fn query_coop_status(
     //println!("{API_BACKEND} {:?}", resp.headers().get("X-Cached"));
 
     let data = resp.bytes().await?.to_vec();
-    //println!("{data:?}");
-    //let res: proto::ContractCoopStatusResponse = decode_data(data, true)?;
+
+    let res = decode_data(data, true)?;
 
     //query_contract_status(&client, contract_id, coop_id, res.grade(), ei).await?;
     //println!("{res:#?}");
 
-    Ok(data)
+    Ok(res)
 }
 
 fn calc_timestamp(timestamp: f64) -> f64 {
