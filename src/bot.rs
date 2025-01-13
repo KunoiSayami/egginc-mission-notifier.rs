@@ -1,8 +1,12 @@
-use std::sync::{Arc, LazyLock};
+use std::{
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 
 use admin::handle_admin_command;
 use anyhow::anyhow;
 use itertools::Itertools;
+use reqwest::ClientBuilder;
 use teloxide::{
     adaptors::DefaultParseMode,
     dispatching::{HandlerExt as _, UpdateFilterExt as _},
@@ -17,8 +21,9 @@ use crate::{
     config::Config,
     database::DatabaseHelper,
     egg::{
-        decode_2,
+        decode_and_calc_score,
         monitor::{MonitorHelper, LAST_QUERY},
+        query_coop_status,
     },
     types::{return_tf_emoji, timestamp_to_string, SpaceShip},
     CHECK_PERIOD, FETCH_PERIOD,
@@ -28,8 +33,12 @@ pub type BotType = DefaultParseMode<Bot>;
 
 static TELEGRAM_ESCAPE_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"([_*\[\]\(\)~>#\+\-=|\{}\.!])").unwrap());
-pub static USERNAME_CHECKER_RE: LazyLock<regex::Regex> =
+pub static EI_CHECKER_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^EI\d{16}$").unwrap());
+pub static COOP_ID_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"^[\w]+(-[\w\d])*$").unwrap());
+pub static ROOM_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"^[\w\d\-]+$").unwrap());
 
 pub fn replace_all(s: &str) -> std::borrow::Cow<'_, str> {
     TELEGRAM_ESCAPE_RE.replace_all(s, "\\$1")
@@ -64,7 +73,7 @@ mod admin {
                                 Ok(Self::CacheReset {
                                     invalidate: second2.eq("true"),
                                 })
-                            } else if USERNAME_CHECKER_RE.is_match(second1) {
+                            } else if EI_CHECKER_RE.is_match(second1) {
                                 Ok(Self::ResetNotify {
                                     ei: second1,
                                     limit: second2.parse().map_err(|_| "Parse number error")?,
@@ -80,7 +89,7 @@ mod admin {
                     }
                     "cache-insert" => {
                         if let Some((second1, second2)) = second.split_once(' ') {
-                            if USERNAME_CHECKER_RE.is_match(second1) {
+                            if EI_CHECKER_RE.is_match(second1) {
                                 Ok(Self::CacheInsertFake { ei: &second1, land_times: second2.split(' ').filter_map(|x| {
                                     x.parse()
                                         .inspect_err(|e| {
@@ -92,7 +101,7 @@ mod admin {
                                 Err("Wrong EI format")
                             }
                         } else {
-                            if !USERNAME_CHECKER_RE.is_match(second) {
+                            if !EI_CHECKER_RE.is_match(second) {
                                 return Err("Wrong EI format");
                             }
                             Ok(Self::CacheInsertFake {
@@ -226,14 +235,50 @@ mod admin {
     }
 }
 
+#[derive(Clone)]
+enum ContractCommand {
+    List { ei: String },
+    Calc { ei: String, id: String },
+    CalcRoom { id: String, room: String },
+}
+
+impl ContractCommand {
+    fn parser(input: String) -> Option<Self> {
+        let Some((first, second)) = input.split_once(' ') else {
+            return None;
+        };
+        if let Some((second, third)) = second.split_once(' ') {
+            match first {
+                "calc" if EI_CHECKER_RE.is_match(second) && ROOM_RE.is_match(third) => {
+                    Some(Self::Calc {
+                        ei: second.into(),
+                        id: third.into(),
+                    })
+                }
+                "room" if COOP_ID_RE.is_match(second) && ROOM_RE.is_match(third) => {
+                    Some(Self::CalcRoom {
+                        id: second.into(),
+                        room: third.into(),
+                    })
+                }
+                _ => None,
+            }
+        } else {
+            match first {
+                "list" if EI_CHECKER_RE.is_match(second) => Some(Self::List { ei: second.into() }),
+                _ => None,
+            }
+        }
+    }
+}
+
 #[derive(BotCommands, Clone)]
-#[command(rename_rule = "lowercase")]
+#[command(rename_rule = "snake_case")]
 enum Command {
     Add { ei: String },
     Delete { ei: String },
     List,
-    ListContract { ei: String },
-    ContractCalc { text_arg: String },
+    Contract { cmd: String },
     Missions { user: String },
     Recent { user: String },
     Admin { line: String },
@@ -312,11 +357,8 @@ pub async fn bot_run(
                             handle_missions_command(bot, arg, msg, user, true).await
                         }
                         Command::Admin { line } => handle_admin_command(bot, arg, msg, line).await,
-                        Command::ListContract { ei } => {
-                            handle_list_contracts(bot, arg, msg, ei).await
-                        }
-                        Command::ContractCalc { text_arg } => {
-                            handle_calc_contracts(bot, arg, msg, text_arg).await
+                        Command::Contract { cmd } => {
+                            route_contract_command(bot, arg, msg, cmd).await
                         }
                     }
                 },
@@ -359,7 +401,7 @@ pub async fn handle_add_command(
         return Ok(());
     }
 
-    if !USERNAME_CHECKER_RE.is_match(&ei) {
+    if !EI_CHECKER_RE.is_match(&ei) {
         bot.send_message(msg.chat.id, "Skip invalid user").await?;
         return Ok(());
     }
@@ -549,6 +591,25 @@ async fn handle_missions_command(
     Ok(())
 }
 
+async fn route_contract_command(
+    bot: BotType,
+    arg: Arc<NecessaryArg>,
+    msg: Message,
+    cmd: String,
+) -> anyhow::Result<()> {
+    let Some(cmd) = ContractCommand::parser(cmd) else {
+        bot.send_message(msg.chat.id, "Invalid contract command\\.")
+            .await?;
+        return Ok(());
+    };
+    match cmd {
+        ContractCommand::List { ei } => handle_list_contracts(bot, arg, msg, ei).await,
+        ContractCommand::Calc { .. } | ContractCommand::CalcRoom { .. } => {
+            handle_calc_score(bot, arg, msg, &cmd).await
+        }
+    }
+}
+
 async fn handle_list_contracts(
     bot: BotType,
     arg: Arc<NecessaryArg>,
@@ -602,30 +663,44 @@ async fn handle_list_contracts(
     Ok(())
 }
 
-async fn handle_calc_contracts(
+async fn handle_calc_score(
     bot: BotType,
     arg: Arc<NecessaryArg>,
     msg: Message,
-    text: String,
+    event: &ContractCommand,
 ) -> anyhow::Result<()> {
-    let Some((ei, contract_id)) = text.split_once(' ') else {
-        bot.send_message(msg.chat.id, "Command format error")
-            .await?;
-        return Ok(());
-    };
+    let is_admin = arg.check_admin(msg.chat.id);
 
-    if !arg.check_admin(msg.chat.id)
-        && !arg
-            .database()
-            .account_query(Some(msg.chat.id.0))
-            .await
-            .ok_or_else(|| anyhow!("Query user error"))?
-            .iter()
-            .any(|x| x.ei().eq(ei))
-    {
-        bot.send_message(msg.chat.id, "Permission denied").await?;
-        return Ok(());
+    match event {
+        ContractCommand::CalcRoom { .. } => {
+            if !is_admin {
+                bot.send_message(msg.chat.id, "Permission denied").await?;
+
+                return Ok(());
+            }
+        }
+        ContractCommand::Calc { ei, .. } => {
+            if !is_admin
+                && !arg
+                    .database()
+                    .account_query(Some(msg.chat.id.0))
+                    .await
+                    .ok_or_else(|| anyhow!("Query user error"))?
+                    .iter()
+                    .any(|x| x.ei().eq(ei))
+            {
+                bot.send_message(msg.chat.id, "Permission denied").await?;
+
+                return Ok(());
+            }
+        }
+        _ => unreachable!(),
     }
+
+    let contract_id = match event {
+        ContractCommand::Calc { id, .. } | ContractCommand::CalcRoom { id, .. } => id,
+        _ => unreachable!(),
+    };
 
     let Some(contract_spec) = arg
         .database()
@@ -638,31 +713,64 @@ async fn handle_calc_contracts(
         return Ok(());
     };
 
-    let Some(user_contract) = arg
-        .database()
-        .contract_query_single(contract_id.to_string(), ei.to_string())
-        .await
-        .ok_or_else(|| anyhow!("Query user contract room error"))?
-    else {
-        bot.send_message(msg.chat.id, "User room not found").await?;
-        return Ok(());
+    let body = match event {
+        ContractCommand::Calc { ei, .. } => {
+            let Some(user_contract) = arg
+                .database()
+                .contract_query_single(contract_id.to_string(), ei.to_string())
+                .await
+                .ok_or_else(|| anyhow!("Query user contract room error"))?
+            else {
+                bot.send_message(msg.chat.id, "User room not found").await?;
+                return Ok(());
+            };
+
+            let Some(contract_cache) = arg
+                .database()
+                .contract_cache_query(contract_id.to_string(), user_contract.room().to_string())
+                .await
+                .ok_or_else(|| anyhow!("Query contract cache error"))?
+            else {
+                bot.send_message(msg.chat.id, "Contract cache not found")
+                    .await?;
+                return Ok(());
+            };
+            contract_cache.extract()
+        }
+        ContractCommand::CalcRoom { room, .. } => {
+            match arg
+                .database()
+                .contract_cache_query(contract_id.to_string(), room.to_string())
+                .await
+                .ok_or_else(|| anyhow!("Query contract cache error"))?
+            {
+                Some(cache) if cache.recent() => cache.extract(),
+                _ => {
+                    let client = ClientBuilder::new()
+                        .timeout(Duration::from_secs(10))
+                        .build()
+                        .unwrap();
+                    let raw = query_coop_status(&client, contract_id, room, None).await?;
+
+                    arg.database()
+                        .contract_cache_insert(contract_id.into(), room.into(), raw.clone())
+                        .await;
+
+                    raw
+                }
+            }
+        }
+        _ => unreachable!(),
     };
 
-    let Some(contract_cache) = arg
-        .database()
-        .contract_cache_query(contract_id.to_string(), user_contract.room().to_string())
-        .await
-        .ok_or_else(|| anyhow!("Query contract cache error"))?
-    else {
-        bot.send_message(msg.chat.id, "Contract cache not found")
-            .await?;
-        return Ok(());
-    };
-
-    let res = decode_2(contract_spec, contract_cache.body(), false)?;
+    let res = decode_and_calc_score(contract_spec, &body, false)?;
 
     if !res.is_empty() {
-        bot.send_message(msg.chat.id, res).await?;
+        bot.send_message(
+            msg.chat.id,
+            format!("{res}\n\nThis score not included your teamwork score\\."),
+        )
+        .await?;
     }
 
     Ok(())

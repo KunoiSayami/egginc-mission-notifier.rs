@@ -236,7 +236,6 @@ impl Monitor {
         let Some(contracts) = info.backup.as_ref().and_then(|x| x.contracts.as_ref()) else {
             return;
         };
-        let mut log_output = vec![];
 
         for local_contract in contracts.contracts.iter().chain(contracts.archive.iter()) {
             let Some(ref contract) = local_contract.contract else {
@@ -267,15 +266,16 @@ impl Monitor {
             {
                 continue;
             }
-            log_output.push(format!(
+            /* log_output.push(format!(
                 "{}: {}",
                 contract.identifier(),
                 local_contract.coop_identifier()
-            ));
+            )); */
         }
-        log::trace!("{ei} found contract: {}", log_output.join("; "));
+        //log::trace!("{ei} found contract: {}", log_output.join("; "));
 
-        log_output.clear();
+        //log_output.clear();
+        let mut log_output = vec![];
 
         let Some(contracts) = info
             .backup

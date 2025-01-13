@@ -6,4 +6,4 @@ pub mod monitor;
 pub mod proto;
 pub mod types;
 
-pub use coop::decode_2;
+pub use coop::{decode_and_calc_score, query_coop_status};

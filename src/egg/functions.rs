@@ -27,7 +27,7 @@ pub(super) fn encode_to_base64<T: prost::Message>(input: &T) -> String {
     BASE64_STANDARD.encode(&encode_to_byte(input))
 }
 
-pub(super) fn encode_to_byte<T: prost::Message>(input: &T) -> Vec<u8> {
+pub(crate) fn encode_to_byte<T: prost::Message>(input: &T) -> Vec<u8> {
     let mut v = Vec::with_capacity(input.encoded_len());
 
     input.encode(&mut v).unwrap();

@@ -108,14 +108,11 @@ pub async fn query_coop_status(
     client: &Client,
     contract_id: &str,
     coop_id: &str,
-    ei: &str,
-) -> anyhow::Result<proto::ContractCoopStatusResponse> {
-    let form = [(
-        "data",
-        build_coop_status_request(contract_id, coop_id, Some(ei.to_string())),
-    )]
-    .into_iter()
-    .collect::<HashMap<_, _>>();
+    ei: Option<String>,
+) -> anyhow::Result<Vec<u8>> {
+    let form = [("data", build_coop_status_request(contract_id, coop_id, ei))]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
 
     let resp = client
         .post(format!("{API_BACKEND}/ei/coop_status"))
@@ -125,14 +122,14 @@ pub async fn query_coop_status(
 
     //println!("{API_BACKEND} {:?}", resp.headers().get("X-Cached"));
 
-    let data = resp.bytes().await?;
-    println!("{data:?}");
-    let res: proto::ContractCoopStatusResponse = decode_data(data, true)?;
+    let data = resp.bytes().await?.to_vec();
+    //println!("{data:?}");
+    //let res: proto::ContractCoopStatusResponse = decode_data(data, true)?;
 
     //query_contract_status(&client, contract_id, coop_id, res.grade(), ei).await?;
     //println!("{res:#?}");
 
-    Ok(res)
+    Ok(data)
 }
 
 fn calc_timestamp(timestamp: f64) -> f64 {
@@ -277,7 +274,11 @@ fn calc_score(
     //* (1.0 + (big_b + big_r + big_t) / 100.0)
 }
 
-pub fn decode_2(spec: ContractSpec, data: &[u8], authorized: bool) -> anyhow::Result<String> {
+pub fn decode_and_calc_score(
+    spec: ContractSpec,
+    data: &[u8],
+    authorized: bool,
+) -> anyhow::Result<String> {
     let res: proto::ContractCoopStatusResponse = decode_data(data, authorized)?;
     let Some(grade_spec) = spec.get(&res.grade()) else {
         return Err(anyhow!("Spec not found"));

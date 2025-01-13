@@ -435,6 +435,14 @@ impl ContractCache {
     pub fn body(&self) -> &[u8] {
         &self.body
     }
+
+    pub fn extract(self) -> Vec<u8> {
+        self.into()
+    }
+
+    pub fn recent(&self) -> bool {
+        (kstool::time::get_current_second() as i64 - self.timestamp) < 30 * 60
+    }
 }
 
 impl From<ContractCache> for Vec<u8> {
