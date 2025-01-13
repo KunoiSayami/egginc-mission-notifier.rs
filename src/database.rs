@@ -265,6 +265,62 @@ pub mod v5 {
     use crate::egg::is_contract_cleared;
 
     pub const VERSION: &str = "5";
+
+    const MERGE_STATEMENT_STAGE: &str = r#"
+        CREATE TABLE "contract_cache_1" (
+            "id"	TEXT NOT NULL,
+            "room"	TEXT NOT NULL,
+            "body"	BLOB NOT NULL,
+            "timestamp"	INTEGER NOT NULL,
+            "cleared"	INTEGER NOT NULL,
+            PRIMARY KEY("id")
+        );
+    "#;
+
+    pub async fn merge_v4(conn: &mut SqliteConnection) -> sqlx::Result<()> {
+        info!("Performing database prepare stage (v5)");
+        sqlx::raw_sql(MERGE_STATEMENT_STAGE)
+            .execute(&mut *conn)
+            .await?;
+
+        let contracts = sqlx::query_as::<_, (String, String, Vec<u8>, i64)>(
+            r#"SELECT "id", "room", "body", "timestamp" FROM "contract_cache""#,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+
+        info!("Merge contract, total {} contracts", contracts.len());
+        for (id, room, body, timestamp) in contracts {
+            let cleared = is_contract_cleared(&body);
+            sqlx::query(r#"INSERT INTO "contract_cache_1" VALUES (?, ?, ?, ?, ?)"#)
+                .bind(id)
+                .bind(room)
+                .bind(body)
+                .bind(timestamp)
+                .bind(cleared)
+                .execute(&mut *conn)
+                .await?;
+        }
+
+        sqlx::raw_sql(
+            r#"DROP TABLE "contract_cache";
+                ALTER TABLE "contract_cache_1" RENAME TO "contract_cache";
+                UPDATE "meta" SET "value" = '5' WHERE "key" = 'version';"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+        info!("Merge completed");
+        Ok(())
+    }
+}
+
+pub mod v6 {
+    use log::info;
+    use sqlx::SqliteConnection;
+
+    use crate::types::ContractCache;
+
+    pub const VERSION: &str = "6";
     pub const CREATE_STATEMENT: &str = r#"
         CREATE TABLE "account" (
             "ei"        TEXT NOT NULL,
@@ -326,7 +382,7 @@ pub mod v5 {
             "body"	BLOB NOT NULL,
             "timestamp"	INTEGER NOT NULL,
             "cleared"	INTEGER NOT NULL,
-            PRIMARY KEY("id")
+            PRIMARY KEY("id", "room")
         );
     "#;
 
@@ -337,31 +393,28 @@ pub mod v5 {
             "body"	BLOB NOT NULL,
             "timestamp"	INTEGER NOT NULL,
             "cleared"	INTEGER NOT NULL,
-            PRIMARY KEY("id")
+            PRIMARY KEY("id", "room")
         );
     "#;
 
-    pub async fn merge_v4(conn: &mut SqliteConnection) -> sqlx::Result<()> {
-        info!("Performing database prepare stage (v5)");
+    pub async fn merge_v5(conn: &mut SqliteConnection) -> sqlx::Result<()> {
+        info!("Performing database prepare stage (v6)");
         sqlx::raw_sql(MERGE_STATEMENT_STAGE)
             .execute(&mut *conn)
             .await?;
 
-        let accounts = sqlx::query_as::<_, (String, String, Vec<u8>, i64)>(
-            r#"SELECT "id", "room", "body", "timestamp" FROM "contract_cache""#,
-        )
-        .fetch_all(&mut *conn)
-        .await?;
+        let contracts = sqlx::query_as::<_, ContractCache>(r#"SELECT * FROM "contract_cache""#)
+            .fetch_all(&mut *conn)
+            .await?;
 
-        info!("Merge contract, total {} contracts", accounts.len());
-        for (id, room, body, timestamp) in accounts {
-            let cleared = is_contract_cleared(&body);
+        info!("Merge contract, total {} contracts", contracts.len());
+        for contract in contracts {
             sqlx::query(r#"INSERT INTO "contract_cache_1" VALUES (?, ?, ?, ?, ?)"#)
-                .bind(id)
-                .bind(room)
-                .bind(body)
-                .bind(timestamp)
-                .bind(cleared)
+                .bind(contract.id())
+                .bind(contract.room())
+                .bind(contract.body())
+                .bind(contract.timestamp())
+                .bind(contract.cleared())
                 .execute(&mut *conn)
                 .await?;
         }
@@ -369,7 +422,7 @@ pub mod v5 {
         sqlx::raw_sql(
             r#"DROP TABLE "contract_cache";
                 ALTER TABLE "contract_cache_1" RENAME TO "contract_cache";
-                UPDATE "meta" SET "value" = '5' WHERE "key" = 'version';"#,
+                UPDATE "meta" SET "value" = '6' WHERE "key" = 'version';"#,
         )
         .execute(&mut *conn)
         .await?;
@@ -454,6 +507,9 @@ impl Database {
                     }
                     v4::VERSION => {
                         v5::merge_v4(&mut self.conn).await?;
+                    }
+                    v5::VERSION => {
+                        v6::merge_v5(&mut self.conn).await?;
                     }
                     current::VERSION => break,
                     _ => {
@@ -1321,10 +1377,9 @@ impl DatabaseHandle {
             if let DatabaseEvent::Terminate = event {
                 break;
             }
-            let event_type = format!("{event:?}");
             Self::handle_event(&mut database, event)
                 .await
-                .inspect_err(|e| error!("Sqlite request {event_type:?} error: {e:?}"))
+                .inspect_err(|e| error!("Sqlite error: {e:?}"))
                 .ok();
         }
         database.close().await?;
@@ -1337,6 +1392,6 @@ impl DatabaseHandle {
 }
 
 pub type DBResult<T> = sqlx::Result<T>;
-pub use v5 as current;
+pub use v6 as current;
 
 use crate::types::{Account, AccountMap, Contract, ContractCache, ContractSpec, SpaceShip, User};

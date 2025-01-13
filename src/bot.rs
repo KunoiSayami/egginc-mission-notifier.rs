@@ -777,7 +777,7 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
         return Err(anyhow!("Contract spec not found"));
     };
 
-    let (timestamp, body) = match event {
+    let (timestamp, room, body) = match event {
         ContractCommand::Calc { ei, .. } => {
             let Some(user_contract) = arg
                 .database()
@@ -796,7 +796,11 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
             else {
                 return Err(anyhow!("Contract cache not found"));
             };
-            (contract_cache.timestamp(), contract_cache.extract())
+            (
+                contract_cache.timestamp(),
+                contract_cache.room().to_string(),
+                contract_cache.extract(),
+            )
         }
         ContractCommand::CalcRoom { room, .. } => {
             match arg
@@ -805,7 +809,9 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
                 .await
                 .ok_or_else(|| anyhow!("Query contract cache error"))?
             {
-                Some(cache) if cache.recent() => (cache.timestamp(), cache.extract()),
+                Some(cache) if cache.recent() => {
+                    (cache.timestamp(), cache.room().to_string(), cache.extract())
+                }
                 _ => {
                     let client = ClientBuilder::new()
                         .timeout(Duration::from_secs(10))
@@ -822,7 +828,11 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
                             raw.cleared_for_exit() || raw.all_members_reporting(),
                         )
                         .await;
-                    (kstool::time::get_current_second() as i64, bytes)
+                    (
+                        kstool::time::get_current_second() as i64,
+                        room.clone(),
+                        bytes,
+                    )
                 }
             }
         }
@@ -831,8 +841,9 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
 
     let res = decode_and_calc_score(contract_spec, &body, false)?;
     Ok(format!(
-        "{res}\n\nContract last update: {}\nLast score update: {}\nThis score not included your teamwork score\\.",
-        replace_all(&timestamp_to_string(kstool::time::get_current_second() as i64)),
+        "`{}`(`{}`)\n{res}\n\nContract last update: {}\nThis score not included your teamwork score\\.",
+        replace_all(contract_id),
+        replace_all(&room),
         replace_all(&timestamp_to_string(timestamp))
     ))
 }

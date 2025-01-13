@@ -330,7 +330,10 @@ impl Monitor {
                     .unwrap_or("")
             ))
         }
-        log::trace!("{ei} found online contract: {}", log_output.join("; "))
+
+        if !log_output.is_empty() {
+            log::trace!("{ei} found online contract: {}", log_output.join("; "))
+        }
     }
 
     async fn handle_each_account(

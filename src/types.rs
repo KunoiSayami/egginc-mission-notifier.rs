@@ -422,7 +422,6 @@ impl FromRow<'_, SqliteRow> for ContractSpec {
     }
 }
 
-#[allow(unused)]
 #[derive(Clone, Debug, FromRow)]
 pub struct ContractCache {
     id: String,
@@ -447,6 +446,18 @@ impl ContractCache {
 
     pub fn timestamp(&self) -> i64 {
         self.timestamp
+    }
+
+    pub fn room(&self) -> &str {
+        &self.room
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn cleared(&self) -> bool {
+        self.cleared
     }
 }
 
