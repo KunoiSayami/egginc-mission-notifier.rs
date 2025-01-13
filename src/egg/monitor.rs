@@ -293,6 +293,7 @@ impl Monitor {
                     contract.contract_identifier().into(),
                     contract.coop_identifier().into(),
                     super::functions::encode_to_byte(contract),
+                    contract.cleared_for_exit() || contract.all_members_reporting(),
                 )
                 .await;
             database
@@ -300,7 +301,7 @@ impl Monitor {
                     contract.contract_identifier().into(),
                     contract.coop_identifier().into(),
                     ei.into(),
-                    contract.cleared_for_exit(),
+                    contract.cleared_for_exit() || contract.all_members_reporting(),
                 )
                 .await;
             if let Some(spec) = database

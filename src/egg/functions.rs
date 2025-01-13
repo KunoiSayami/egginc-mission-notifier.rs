@@ -119,18 +119,18 @@ pub fn build_first_contract_request(ei: String) -> String {
 }
 
 pub fn decode_data<T: AsRef<[u8]>, Output: prost::Message + std::default::Default>(
-    base64_encoded: T,
+    b64_or_raw: T,
     authorized: bool,
 ) -> anyhow::Result<Output> {
     if !authorized {
-        return if let Ok(raw) = BASE64_STANDARD.decode(base64_encoded.as_ref()) {
+        return if let Ok(raw) = BASE64_STANDARD.decode(b64_or_raw.as_ref()) {
             Output::decode(&mut Cursor::new(raw))
         } else {
-            Output::decode(&mut Cursor::new(base64_encoded))
+            Output::decode(&mut Cursor::new(b64_or_raw))
         }
         .map_err(|e| anyhow!("Decode user data error: {e:?}"));
     }
-    let tmp: proto::AuthenticatedMessage = decode_data(base64_encoded, false)?;
+    let tmp: proto::AuthenticatedMessage = decode_data(b64_or_raw, false)?;
     if tmp.message().is_empty() {
         return Err(anyhow!("Message is empty"));
     }
@@ -179,4 +179,14 @@ pub fn grade_to_big_g(grade: proto::contract::PlayerGrade) -> f64 {
         proto::contract::PlayerGrade::GradeAa => 5.0,
         proto::contract::PlayerGrade::GradeAaa => 7.0,
     }
+}
+
+pub(crate) fn is_contract_cleared(raw: &[u8]) -> bool {
+    let Ok::<proto::ContractCoopStatusResponse, _>(data) = decode_data(raw, false)
+        .inspect_err(|e| log::error!("Decode data error, return false: {e:?}"))
+    else {
+        return false;
+    };
+
+    data.cleared_for_exit()
 }

@@ -815,7 +815,12 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
 
                     let bytes = encode_to_byte(&raw);
                     arg.database()
-                        .contract_cache_insert(contract_id.into(), room.into(), bytes.clone())
+                        .contract_cache_insert(
+                            contract_id.into(),
+                            room.into(),
+                            bytes.clone(),
+                            raw.cleared_for_exit() || raw.all_members_reporting(),
+                        )
                         .await;
                     (kstool::time::get_current_second() as i64, bytes)
                 }

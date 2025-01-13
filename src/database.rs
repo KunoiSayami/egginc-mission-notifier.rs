@@ -184,69 +184,6 @@ pub mod v4 {
     use sqlx::SqliteConnection;
 
     pub const VERSION: &str = "4";
-    pub const CREATE_STATEMENT: &str = r#"
-        CREATE TABLE "account" (
-            "ei"        TEXT NOT NULL,
-            "nickname"  TEXT,
-            "last_fetch"    INTEGER NOT NULL DEFAULT 0,
-            "contract_trace" INTEGER NOT NULL DEFAULT 0,
-            "disabled"  INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY("ei")
-        );
-
-        CREATE TABLE "user" (
-            "id" INTEGER NOT NULL,
-            "accounts" TEXT NOT NULL,
-            PRIMARY KEY("id")
-        );
-
-        CREATE TABLE "account_map" (
-            "ei" TEXT NOT NULL,
-            "users" TEXT NOT NULL,
-            PRIMARY KEY("ei")
-        );
-
-        CREATE TABLE "meta" (
-            "key"       TEXT NOT NULL,
-            "value"     TEXT,
-            PRIMARY KEY("key")
-        );
-
-        CREATE TABLE "spaceship" (
-            "id"        TEXT NOT NULL,
-            "name"      TEXT NOT NULL,
-            "duration_type"  INTEGER NOT NULL,
-            "belong"    TEXT NOT NULL,
-            "land"      INTEGER NOT NULL,
-            "notified" INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY("id")
-        );
-
-        CREATE TABLE "player_contract" (
-            "id"	TEXT NOT NULL,
-            "room"	TEXT NOT NULL,
-            "belong"	TEXT NOT NULL,
-            "start_time" REAL,
-            "finished"	INTEGER NOT NULL,
-            PRIMARY KEY("id", "belong")
-        );
-
-        CREATE TABLE "contract" (
-            "id"	TEXT NOT NULL,
-            "size"  INTEGER NOT NULL,
-            "token_time" REAL NOT NULL,
-            "body"	BLOB NOT NULL,
-            PRIMARY KEY("id")
-        );
-
-        CREATE TABLE "contract_cache" (
-            "id"	TEXT NOT NULL,
-            "room"	TEXT NOT NULL,
-            "body"	BLOB NOT NULL,
-            "timestamp"	INTEGER NOT NULL,
-            PRIMARY KEY("id")
-        );
-    "#;
 
     const MERGE_STATEMENT_STAGE: &str = r#"
         CREATE TABLE "account_1" (
@@ -313,6 +250,126 @@ pub mod v4 {
             r#"DROP TABLE "account";
                 ALTER TABLE "account_1" RENAME TO "account";
                 UPDATE "meta" SET "value" = '4' WHERE "key" = 'version';"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+        info!("Merge completed");
+        Ok(())
+    }
+}
+
+pub mod v5 {
+    use log::info;
+    use sqlx::SqliteConnection;
+
+    use crate::egg::is_contract_cleared;
+
+    pub const VERSION: &str = "5";
+    pub const CREATE_STATEMENT: &str = r#"
+        CREATE TABLE "account" (
+            "ei"        TEXT NOT NULL,
+            "nickname"  TEXT,
+            "last_fetch"    INTEGER NOT NULL DEFAULT 0,
+            "contract_trace" INTEGER NOT NULL DEFAULT 0,
+            "disabled"  INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY("ei")
+        );
+
+        CREATE TABLE "user" (
+            "id" INTEGER NOT NULL,
+            "accounts" TEXT NOT NULL,
+            PRIMARY KEY("id")
+        );
+
+        CREATE TABLE "account_map" (
+            "ei" TEXT NOT NULL,
+            "users" TEXT NOT NULL,
+            PRIMARY KEY("ei")
+        );
+
+        CREATE TABLE "meta" (
+            "key"       TEXT NOT NULL,
+            "value"     TEXT,
+            PRIMARY KEY("key")
+        );
+
+        CREATE TABLE "spaceship" (
+            "id"        TEXT NOT NULL,
+            "name"      TEXT NOT NULL,
+            "duration_type"  INTEGER NOT NULL,
+            "belong"    TEXT NOT NULL,
+            "land"      INTEGER NOT NULL,
+            "notified" INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY("id")
+        );
+
+        CREATE TABLE "player_contract" (
+            "id"	TEXT NOT NULL,
+            "room"	TEXT NOT NULL,
+            "belong"	TEXT NOT NULL,
+            "start_time" REAL,
+            "finished"	INTEGER NOT NULL,
+            PRIMARY KEY("id", "belong")
+        );
+
+        CREATE TABLE "contract" (
+            "id"	TEXT NOT NULL,
+            "size"  INTEGER NOT NULL,
+            "token_time" REAL NOT NULL,
+            "body"	BLOB NOT NULL,
+            PRIMARY KEY("id")
+        );
+
+        CREATE TABLE "contract_cache" (
+            "id"	TEXT NOT NULL,
+            "room"	TEXT NOT NULL,
+            "body"	BLOB NOT NULL,
+            "timestamp"	INTEGER NOT NULL,
+            "cleared"	INTEGER NOT NULL,
+            PRIMARY KEY("id")
+        );
+    "#;
+
+    const MERGE_STATEMENT_STAGE: &str = r#"
+        CREATE TABLE "contract_cache_1" (
+            "id"	TEXT NOT NULL,
+            "room"	TEXT NOT NULL,
+            "body"	BLOB NOT NULL,
+            "timestamp"	INTEGER NOT NULL,
+            "cleared"	INTEGER NOT NULL,
+            PRIMARY KEY("id")
+        );
+    "#;
+
+    pub async fn merge_v4(conn: &mut SqliteConnection) -> sqlx::Result<()> {
+        info!("Performing database prepare stage (v5)");
+        sqlx::raw_sql(MERGE_STATEMENT_STAGE)
+            .execute(&mut *conn)
+            .await?;
+
+        let accounts = sqlx::query_as::<_, (String, String, Vec<u8>, i64)>(
+            r#"SELECT "id", "room", "body", "timestamp" FROM "contract_cache""#,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+
+        info!("Merge contract, total {} contracts", accounts.len());
+        for (id, room, body, timestamp) in accounts {
+            let cleared = is_contract_cleared(&body);
+            sqlx::query(r#"INSERT INTO "contract_cache_1" VALUES (?, ?, ?, ?, ?)"#)
+                .bind(id)
+                .bind(room)
+                .bind(body)
+                .bind(timestamp)
+                .bind(cleared)
+                .execute(&mut *conn)
+                .await?;
+        }
+
+        sqlx::raw_sql(
+            r#"DROP TABLE "contract_cache";
+                ALTER TABLE "contract_cache_1" RENAME TO "contract_cache";
+                UPDATE "meta" SET "value" = '5' WHERE "key" = 'version';"#,
         )
         .execute(&mut *conn)
         .await?;
@@ -394,6 +451,9 @@ impl Database {
                     }
                     v3::VERSION => {
                         v4::merge_v3(&mut self.conn).await?;
+                    }
+                    v4::VERSION => {
+                        v5::merge_v4(&mut self.conn).await?;
                     }
                     current::VERSION => break,
                     _ => {
@@ -764,12 +824,15 @@ impl Database {
         room: &str,
         body: &[u8],
         timestamp: i64,
+        // Cleared for exit
+        cleared: bool,
     ) -> DBResult<()> {
-        sqlx::query(r#"INSERT INTO "contract_cache" VALUES (?, ?, ?, ?)"#)
+        sqlx::query(r#"INSERT INTO "contract_cache" VALUES (?, ?, ?, ?, ?)"#)
             .bind(id)
             .bind(room)
             .bind(body)
             .bind(timestamp)
+            .bind(cleared)
             .execute(&mut self.conn)
             .await?;
         Ok(())
@@ -797,12 +860,14 @@ impl Database {
         room: &str,
         body: &[u8],
         timestamp: i64,
+        cleared: bool,
     ) -> DBResult<()> {
-        sqlx::query(r#"UPDATE "contract_cache" SET "body" = ?, "timestamp" = ? WHERE "id" = ? AND "room" = ?"#)
-        .bind(body)
-        .bind(timestamp)
-        .bind(id)
-        .bind(room)
+        sqlx::query(r#"UPDATE "contract_cache" SET "body" = ?, "timestamp" = ?, "cleared" = ? WHERE "id" = ? AND "room" = ?"#)
+            .bind(body)
+            .bind(timestamp)
+            .bind(cleared)
+            .bind(id)
+            .bind(room)
             .execute(&mut self.conn)
             .await?;
         Ok(())
@@ -967,6 +1032,7 @@ pub enum DatabaseEvent {
         id: String,
         room: String,
         cache: Vec<u8>,
+        cleared: bool,
     },
     ContractCacheUpdateTimestamp {
         id: String,
@@ -1121,15 +1187,20 @@ impl DatabaseHandle {
                     .send(database.query_account_map(&ei).await?)
                     .ok();
             }
-            DatabaseEvent::ContractCacheInsert { id, room, cache } => {
+            DatabaseEvent::ContractCacheInsert {
+                id,
+                room,
+                cache,
+                cleared,
+            } => {
                 let current = kstool::time::get_current_second() as i64;
                 if database.query_contract_cache(&id, &room).await?.is_none() {
                     database
-                        .insert_contract_cache(&id, &room, &cache, current)
+                        .insert_contract_cache(&id, &room, &cache, current, cleared)
                         .await?;
                 } else {
                     database
-                        .update_contract_cache(&id, &room, &cache, current)
+                        .update_contract_cache(&id, &room, &cache, current, cleared)
                         .await?;
                 }
             }
@@ -1266,6 +1337,6 @@ impl DatabaseHandle {
 }
 
 pub type DBResult<T> = sqlx::Result<T>;
-pub use v4 as current;
+pub use v5 as current;
 
 use crate::types::{Account, AccountMap, Contract, ContractCache, ContractSpec, SpaceShip, User};
