@@ -860,7 +860,7 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
         .iter()
         .map(|member| {
             format!(
-                "*{}*\nShipped: _{}_ ELR: _{}_ SR: _{}_ Score: __{}__",
+                "*{}* Shipped: _{}_ ELR: _{}_ SR: _{}_ Score: __{}__",
                 replace_all(member.username()),
                 replace_all(&member.amount()),
                 if let Some(elr) = member.elr() {

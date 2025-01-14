@@ -338,8 +338,8 @@ mod types {
                     player.contribution_amount(),
                     big_g,
                     grade_spec,
-                    coop.total_amount(),
-                    coop_size,
+                    grade_spec.goal3().max(coop.total_amount()),
+                    coop_size as f64,
                     token_time,
                     coop_total_time,
                     completion_time,
@@ -376,7 +376,7 @@ mod types {
             big_g: f64,
             grade_spec: &ContractGradeSpec,
             total_delivered: f64,
-            coop_size: i64,
+            coop_size: f64,
             token_time: f64,
             coop_total_time: f64,
             completion_time: f64,
@@ -384,7 +384,7 @@ mod types {
         ) -> f64 {
             let user_total_delivered =
                 contributions + total_elr.unwrap_or(0.0) * expect_remain_time;
-            let ratio = (user_total_delivered * coop_size as f64)
+            let ratio = (user_total_delivered * coop_size)
                 / grade_spec
                     .goal3()
                     .min(grade_spec.goal1().max(total_delivered));
@@ -403,8 +403,7 @@ mod types {
             let _big_t = 2.0 * (big_v.min(4.0) + 4.0 * big_v.min(2.0)) / big_v;
 
             //let run_cap = 4.0;
-            let _big_r =
-                6.0f64.min(0.3f64.max(12.0 / coop_size as f64 / coop_total_time * 86400.0));
+            let _big_r = 6.0f64.min(0.3f64.max(12.0 / coop_size / coop_total_time * 86400.0));
             187.5
                 * big_g
                 * big_c

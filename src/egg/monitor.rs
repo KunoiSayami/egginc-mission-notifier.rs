@@ -297,8 +297,16 @@ impl Monitor {
                     super::functions::encode_to_byte(contract),
                     contract.cleared_for_exit() || contract.all_members_reporting(),
                     Some((remaining, |original, remaining| {
-                        decode_data::<_, ContractCoopStatusResponse>(original, false)
-                            .is_ok_and(|x| x.seconds_remaining() > remaining)
+                        decode_data::<_, ContractCoopStatusResponse>(original, false).is_ok_and(
+                            |x| {
+                                /* log::debug!(
+                                    "old: {}, new: {remaining} {}",
+                                    x.seconds_remaining(),
+                                    x.seconds_remaining() > remaining
+                                ); */
+                                x.seconds_remaining() >= remaining
+                            },
+                        )
                     })),
                 )
                 .await
