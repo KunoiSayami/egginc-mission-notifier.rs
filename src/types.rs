@@ -325,6 +325,17 @@ pub fn fmt_time_delta(delta: chrono::TimeDelta) -> String {
         delta.num_seconds() % 60,
     )
 }
+pub fn fmt_time_delta_short(delta: chrono::TimeDelta) -> String {
+    let days = delta.num_days();
+    let day_str = format!("{days}d");
+    format!(
+        "{}{}h{}m{}s",
+        if days > 0 { day_str.as_str() } else { "" },
+        delta.num_hours() % 24,
+        delta.num_minutes() % 60,
+        delta.num_seconds() % 60,
+    )
+}
 
 #[derive(Clone, Debug, FromRow)]
 pub struct Contract {

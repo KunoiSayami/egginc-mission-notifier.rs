@@ -5,6 +5,7 @@ use std::{
 
 use admin::handle_admin_command;
 use anyhow::anyhow;
+use chrono::TimeDelta;
 use itertools::Itertools;
 use reqwest::ClientBuilder;
 use teloxide::{
@@ -29,7 +30,7 @@ use crate::{
         monitor::{MonitorHelper, LAST_QUERY},
         query_coop_status,
     },
-    types::{return_tf_emoji, timestamp_to_string, SpaceShip},
+    types::{fmt_time_delta_short, return_tf_emoji, timestamp_to_string, SpaceShip},
     CHECK_PERIOD, FETCH_PERIOD,
 };
 
@@ -839,12 +840,50 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
         _ => unreachable!(),
     };
 
-    let res = decode_and_calc_score(contract_spec, &body, false)?;
+    let score = decode_and_calc_score(contract_spec, &body, false)?;
+    let current = kstool::time::get_current_second() as i64;
+
+    let sub_title = if !score.is_finished() {
+        format!(
+            "Expect complete: {}\n",
+            replace_all(&timestamp_to_string(
+                current + score.expect_finish_time(Some(timestamp)) as i64,
+            ))
+        )
+    } else {
+        "".into()
+    };
+
+    let users = score
+        .member()
+        .iter()
+        .map(|member| {
+            format!(
+                "*{}*\nShipped: _{}_ ELR: _{}_ Score: __{}__",
+                replace_all(member.username()),
+                replace_all(&member.amount()),
+                if let Some(elr) = member.elr() {
+                    replace_all(&elr).into_owned()
+                } else {
+                    "N/A".into()
+                },
+                member.score() as i64,
+            )
+        })
+        .join("\n");
+
     Ok(format!(
-        "`{}`(`{}`)\n{res}\n\nContract last update: {}\nThis score not included your teamwork score\\.",
-        replace_all(contract_id),
-        replace_all(&room),
-        replace_all(&timestamp_to_string(timestamp))
+        "`{contract}` \\[`{room}`\\] {grade} {is_finished}\nTarget: {amount}/{target} ELR: _{elr}_\nContract timestamp: _{completion_time}_ / _{remain}_ remain\n{sub_title}\n{users}\n\nContract last update: {last_update}\nThis score not included your teamwork score\\.",
+        contract = replace_all(contract_id),
+        room = replace_all(&room),
+        grade = score.grade_str(),
+        is_finished = if score.is_finished() { "✅" } else { "" },
+        elr = replace_all(&score.total_known_elr()),
+        completion_time = fmt_time_delta_short(TimeDelta::seconds(score.completion_time() as i64)),
+        amount = replace_all(&score.current_amount()),
+        target = replace_all(&score.target_amount()),
+        remain = replace_all(&fmt_time_delta_short(TimeDelta::seconds(score.contract_remain_time(Some(timestamp)) as i64))),
+        last_update = replace_all(&timestamp_to_string(timestamp))
     ))
 }
 
