@@ -1066,7 +1066,7 @@ pub enum DatabaseEvent {
         id: String,
         room: String,
         ei: String,
-        finished: bool
+        finished: bool,
     },
     ContractUpdate {
         id: String,
@@ -1084,11 +1084,13 @@ pub enum DatabaseEvent {
         id: String,
         room: String
     },
+    #[ret(bool)]
     ContractCacheInsert {
         id: String,
         room: String,
         cache: Vec<u8>,
         cleared: bool,
+        remain_to_check: Option<(f64, fn(&[u8], f64) -> bool)>,
     },
     ContractCacheUpdateTimestamp {
         id: String,
@@ -1248,16 +1250,26 @@ impl DatabaseHandle {
                 room,
                 cache,
                 cleared,
+                remain_to_check,
+                __private_sender,
             } => {
                 let current = kstool::time::get_current_second() as i64;
-                if database.query_contract_cache(&id, &room).await?.is_none() {
-                    database
-                        .insert_contract_cache(&id, &room, &cache, current, cleared)
-                        .await?;
-                } else {
+                if let Some(original_cache) = database.query_contract_cache(&id, &room).await? {
+                    __private_sender.send(true).ok();
+                    if let Some((remaining, checker)) = remain_to_check {
+                        if checker(original_cache.body(), remaining) {
+                            log::warn!("Trying update outdated cache, skip");
+                            return Ok(());
+                        }
+                    }
                     database
                         .update_contract_cache(&id, &room, &cache, current, cleared)
                         .await?;
+                } else {
+                    database
+                        .insert_contract_cache(&id, &room, &cache, current, cleared)
+                        .await?;
+                    __private_sender.send(false).ok();
                 }
             }
             DatabaseEvent::ContractSpecInsert(contract_spec, sender) => {

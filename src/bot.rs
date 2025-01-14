@@ -827,6 +827,7 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
                             room.into(),
                             bytes.clone(),
                             raw.cleared_for_exit() || raw.all_members_reporting(),
+                            None,
                         )
                         .await;
                     (

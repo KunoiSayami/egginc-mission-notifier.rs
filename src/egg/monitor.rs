@@ -19,7 +19,8 @@ use crate::{
     FETCH_PERIOD,
 };
 
-use super::functions::{get_missions, request};
+use super::functions::{decode_data, get_missions, request};
+use super::proto::ContractCoopStatusResponse;
 use super::types::ContractGradeSpec;
 
 pub static LAST_QUERY: LazyLock<AtomicU64> = LazyLock::new(|| AtomicU64::new(0));
@@ -288,14 +289,20 @@ impl Monitor {
         };
 
         for contract in contracts {
-            database
+            let remaining = contract.seconds_remaining();
+            let seen = database
                 .contract_cache_insert(
                     contract.contract_identifier().into(),
                     contract.coop_identifier().into(),
                     super::functions::encode_to_byte(contract),
                     contract.cleared_for_exit() || contract.all_members_reporting(),
+                    Some((remaining, |original, remaining| {
+                        decode_data::<_, ContractCoopStatusResponse>(original, false)
+                            .is_ok_and(|x| x.seconds_remaining() > remaining)
+                    })),
                 )
-                .await;
+                .await
+                .unwrap_or(false);
             database
                 .contract_update(
                     contract.contract_identifier().into(),
@@ -319,6 +326,9 @@ impl Monitor {
                         )
                         .await;
                 }
+            }
+            if seen {
+                continue;
             }
             log_output.push(format!(
                 "{}: {}{}",
