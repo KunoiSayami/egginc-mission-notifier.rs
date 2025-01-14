@@ -182,6 +182,8 @@ mod types {
         amount: f64,
         shipping_rate: Option<f64>,
         egg_laying_rate: Option<f64>,
+        #[allow(unused)]
+        timestamp: Option<f64>,
         score: f64,
     }
 
@@ -191,22 +193,30 @@ mod types {
         }
 
         pub fn elr(&self) -> Option<String> {
-            let elr = self.egg_laying_rate?;
-            let sr = self.shipping_rate?;
-            Some(if sr < elr {
-                parse_num_with_unit(sr * 3600.0)
-            } else {
-                parse_num_with_unit(elr * 3600.0)
-            })
+            Some(parse_num_with_unit(
+                self.egg_laying_rate?.min(self.shipping_rate?) * 3600.0,
+            ))
         }
 
         pub fn score(&self) -> f64 {
             self.score
         }
+        pub fn sr(&self) -> String {
+            if let Some(sr) = self.shipping_rate {
+                parse_num_with_unit(sr * 3600.0)
+            } else {
+                "N/A".into()
+            }
+        }
 
         pub fn amount(&self) -> String {
             parse_num_with_unit(self.amount)
         }
+
+        /* pub fn timestamp(&self, cache_timestamp: Option<i64>) -> Option<f64> {
+            self.timestamp
+                .map(|t| CoopScore::get_timestamp_offset(t, cache_timestamp))
+        } */
     }
 
     #[derive(Clone)]
@@ -275,7 +285,8 @@ mod types {
                     .filter(|x| x.production_params.is_some() && x.farm_info.is_some())
                     .fold((0.001, 0.0), |(mut acc, mut offline_egg), x: &crate::egg::proto::contract_coop_status_response::ContributionInfo| {
                         let farm_prams = x.production_params.as_ref().unwrap();
-                        let farm_elr = farm_prams.elr() * farm_prams.farm_population();
+                        let farm_elr = farm_prams.sr().min(farm_prams.elr() * farm_prams.farm_population());
+
                         acc += farm_elr;
                         // offline laying
                         let player_offline_egg =
@@ -340,6 +351,7 @@ mod types {
                     shipping_rate,
                     amount: player.contribution_amount(),
                     username: player.user_name().into(),
+                    timestamp: player.farm_info.as_ref().map(|x| x.timestamp()),
                     score,
                 });
                 /* print!(
