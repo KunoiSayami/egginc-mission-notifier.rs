@@ -176,12 +176,50 @@ mod types {
         }
     }
 
+    #[derive(Clone, Copy, Debug)]
+    pub enum CompletionLevel {
+        NotTrack,
+        OnTrack,
+        Completed,
+        Cleared,
+    }
+
+    impl CompletionLevel {
+        fn from_status(data: &super::proto::ContractCoopStatusResponse, on_time: bool) -> Self {
+            if data.cleared_for_exit() || data.all_members_reporting() {
+                Self::Cleared
+            } else if data.all_goals_achieved() {
+                Self::Completed
+            } else if on_time {
+                Self::OnTrack
+            } else {
+                Self::NotTrack
+            }
+        }
+    }
+
+    impl std::fmt::Display for CompletionLevel {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "{}",
+                match self {
+                    CompletionLevel::NotTrack => "🔴",
+                    CompletionLevel::OnTrack => "🟡",
+                    CompletionLevel::Completed => "🟢",
+                    CompletionLevel::Cleared => "✅",
+                }
+            )
+        }
+    }
+
     #[derive(Clone)]
     pub struct UserScore {
         username: String,
         amount: f64,
         shipping_rate: Option<f64>,
         egg_laying_rate: Option<f64>,
+        finalized: bool,
         #[allow(unused)]
         timestamp: Option<f64>,
         score: f64,
@@ -213,6 +251,10 @@ mod types {
             parse_num_with_unit(self.amount)
         }
 
+        pub fn finalized(&self) -> &'static str {
+            self.finalized.then(|| " ✅").unwrap_or_default()
+        }
+
         /* pub fn timestamp(&self, cache_timestamp: Option<i64>) -> Option<f64> {
             self.timestamp
                 .map(|t| CoopScore::get_timestamp_offset(t, cache_timestamp))
@@ -226,6 +268,7 @@ mod types {
         current_amount: f64,
         grade: PlayerGrade,
         completion_time: f64,
+        status: CompletionLevel,
         expect_remain_time: f64,
         contract_remain_time: f64,
         member: Vec<UserScore>,
@@ -257,6 +300,7 @@ mod types {
                 spec: *grade_spec,
                 expect_remain_time,
                 grade: data.grade(),
+                status: CompletionLevel::from_status(&data, completion_time < grade_spec.length()),
                 completion_time,
                 current_amount: data.total_amount(),
                 contract_remain_time: data.seconds_remaining(),
@@ -349,6 +393,7 @@ mod types {
                 players.push(UserScore {
                     egg_laying_rate,
                     shipping_rate,
+                    finalized: player.finalized(),
                     amount: player.contribution_amount(),
                     username: player.user_name().into(),
                     timestamp: player.farm_info.as_ref().map(|x| x.timestamp()),
@@ -452,7 +497,14 @@ mod types {
         }
 
         pub fn is_finished(&self) -> bool {
-            self.expect_remain_time == 0.0
+            match self.status {
+                CompletionLevel::Completed | CompletionLevel::Cleared => true,
+                _ => false,
+            }
+        }
+
+        pub fn emoji(&self) -> String {
+            self.status.to_string()
         }
 
         pub fn member(&self) -> &[UserScore] {

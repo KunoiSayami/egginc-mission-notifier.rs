@@ -289,22 +289,25 @@ impl Monitor {
         };
 
         for contract in contracts {
-            let remaining = contract.seconds_remaining();
+            let amount = contract.total_amount();
+            let remain = contract.seconds_remaining();
             let seen = database
                 .contract_cache_insert(
                     contract.contract_identifier().into(),
                     contract.coop_identifier().into(),
                     super::functions::encode_to_byte(contract),
                     contract.cleared_for_exit() || contract.all_members_reporting(),
-                    Some((remaining, |original, remaining| {
+                    Some(((amount, remain), |original, (amount, remain)| {
                         decode_data::<_, ContractCoopStatusResponse>(original, false).is_ok_and(
                             |x| {
-                                /* log::debug!(
-                                    "old: {}, new: {remaining} {}",
+                                log::debug!(
+                                    "old: {}, {} new: {amount} {remain} {} {}",
+                                    x.total_amount(),
                                     x.seconds_remaining(),
-                                    x.seconds_remaining() > remaining
-                                ); */
-                                x.seconds_remaining() >= remaining
+                                    x.total_amount() > amount,
+                                    x.seconds_remaining() > remain,
+                                );
+                                x.total_amount() <= amount && x.seconds_remaining() < remain
                             },
                         )
                     })),

@@ -1090,7 +1090,7 @@ pub enum DatabaseEvent {
         room: String,
         cache: Vec<u8>,
         cleared: bool,
-        remain_to_check: Option<(f64, fn(&[u8], f64) -> bool)>,
+        amount_to_check: Option<((f64, f64), fn(&[u8], (f64, f64)) -> bool)>,
     },
     ContractCacheUpdateTimestamp {
         id: String,
@@ -1250,15 +1250,15 @@ impl DatabaseHandle {
                 room,
                 cache,
                 cleared,
-                remain_to_check,
+                amount_to_check,
                 __private_sender,
             } => {
                 let current = kstool::time::get_current_second() as i64;
                 if let Some(original_cache) = database.query_contract_cache(&id, &room).await? {
                     __private_sender.send(true).ok();
-                    if let Some((remaining, checker)) = remain_to_check {
-                        if checker(original_cache.body(), remaining) {
-                            log::warn!("Trying update outdated cache, skip");
+                    if let Some((amount, checker)) = amount_to_check {
+                        if !checker(original_cache.body(), amount) {
+                            //log::warn!("Trying update outdated cache, skip");
                             return Ok(());
                         }
                     }

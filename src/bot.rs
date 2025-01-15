@@ -860,7 +860,7 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
         .iter()
         .map(|member| {
             format!(
-                "*{}* Shipped: _{}_ ELR: _{}_ SR: _{}_ Score: __{}__",
+                "*{}* _Shipped:_ {} _ELR:_ {} _SR:_ {} _Score:_ __{}__{}",
                 replace_all(member.username()),
                 replace_all(&member.amount()),
                 if let Some(elr) = member.elr() {
@@ -870,16 +870,18 @@ async fn process_calc(arg: Arc<NecessaryArg>, event: &ContractCommand) -> anyhow
                 },
                 replace_all(&member.sr()),
                 member.score() as i64,
+                member.finalized()
             )
         })
         .join("\n");
 
     Ok(format!(
-        "`{contract}` \\[`{room}`\\] {grade} {is_finished}\nTarget: {amount}/{target} ELR: _{elr}_\nContract timestamp: _{completion_time}_ / _{remain}_ remain\n{sub_title}\n{users}\n\nContract last update: {last_update}\nThis score not included your teamwork score\\.",
+        "*\\({grade}\\)* `{contract}` \\[`{room}`\\] {current_status}\n\
+        Target: {amount}/{target} ELR: _{elr}_\nContract timestamp: _{completion_time}_ / _{remain}_ remain\n{sub_title}\n{users}\n\nContract last update: {last_update}\nThis score not included your teamwork score\\.",
         contract = replace_all(contract_id),
         room = replace_all(&room),
         grade = score.grade_str(),
-        is_finished = if score.is_finished() { "✅" } else { "" },
+        current_status = score.emoji(),
         elr = replace_all(&score.total_known_elr()),
         completion_time = fmt_time_delta_short(TimeDelta::seconds(score.completion_time() as i64)),
         amount = replace_all(&score.current_amount()),
