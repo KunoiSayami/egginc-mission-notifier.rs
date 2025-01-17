@@ -326,19 +326,27 @@ mod types {
                 let (total_elr, offline_egg) = coop
                     .contributors
                     .iter()
-                    .filter(|x| x.production_params.is_some() && x.farm_info.is_some())
-                    .fold((0.001, 0.0), |(mut acc, mut offline_egg), x: &crate::egg::proto::contract_coop_status_response::ContributionInfo| {
-                        let farm_prams = x.production_params.as_ref().unwrap();
-                        let farm_elr = farm_prams.sr().min(farm_prams.elr() * farm_prams.farm_population());
+                    .filter_map(|x| {
+                        let farm_prams = x.production_params.as_ref()?;
+                        let farm_info = x.farm_info.as_ref()?;
+                        let farm_elr = farm_prams
+                            .sr()
+                            .min(farm_prams.elr() * farm_prams.farm_population());
 
-                        acc += farm_elr;
                         // offline laying
-                        let player_offline_egg =
-                            calc_timestamp(x.farm_info.as_ref().unwrap().timestamp()) * farm_elr;
-                        offline_egg += player_offline_egg;
+                        let player_offline_egg = calc_timestamp(farm_info.timestamp()) * farm_elr;
                         //log::trace!("Player {} egg {}", x.user_name(), pu(player_offline_egg));
-                        (acc, offline_egg)
-                    });
+                        Some((farm_elr, player_offline_egg))
+                    })
+                    .fold(
+                        (0.001, 0.0),
+                        |(mut acc, mut offline_egg), (farm_elr, player_offline_egg)| {
+                            acc += farm_elr;
+                            offline_egg += player_offline_egg;
+                            //log::trace!("Player {} egg {}", x.user_name(), pu(player_offline_egg));
+                            (acc, offline_egg)
+                        },
+                    );
                 //log::trace!("{} {} {total_elr}", pu(remain), pu(offline_egg));
                 let expect_remain_time = (remain - offline_egg) / total_elr;
                 (
@@ -378,7 +386,7 @@ mod types {
                     .unzip();
 
                 let score = Self::calc_score(
-                    egg_laying_rate,
+                    egg_laying_rate.and_then(|elr| Some(elr.min(shipping_rate?))),
                     player.contribution_amount(),
                     big_g,
                     grade_spec,
