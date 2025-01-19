@@ -161,9 +161,13 @@ pub fn decode_and_calc_score(
 }
 
 mod types {
+    use std::borrow::Cow;
+
+    use chrono::TimeDelta;
+
     use crate::{
         egg::{functions::grade_to_big_g, proto::contract::PlayerGrade, types::ContractGradeSpec},
-        types::ContractSpec,
+        types::{fmt_time_delta_short, ContractSpec},
     };
 
     use super::parse_num_with_unit;
@@ -255,10 +259,58 @@ mod types {
             self.finalized.then(|| " ✅").unwrap_or_default()
         }
 
-        /* pub fn timestamp(&self, cache_timestamp: Option<i64>) -> Option<f64> {
+        pub fn timestamp(&self, cache_timestamp: Option<i64>) -> Option<f64> {
             self.timestamp
                 .map(|t| CoopScore::get_timestamp_offset(t, cache_timestamp))
-        } */
+        }
+
+        pub fn print(
+            &self,
+            detail: bool,
+            cache_timestamp: Option<i64>,
+            finished: bool,
+            escape_func: fn(&str) -> Cow<'_, str>,
+        ) -> Result<String, std::fmt::Error> {
+            use std::fmt::Write;
+            let mut fmt = String::new();
+            write!(
+                fmt,
+                "*{}* _Shipped:_ {} _ELR:_ {} _SR:_ {}",
+                escape_func(self.username()),
+                escape_func(&self.amount()),
+                if let Some(elr) = self.elr() {
+                    escape_func(&elr).into_owned()
+                } else {
+                    "N/A".into()
+                },
+                escape_func(&self.sr()),
+            )?;
+
+            if let Some(timestamp) = detail.then_some(self.timestamp(cache_timestamp)).flatten() {
+                write!(
+                    fmt,
+                    " _Offline_: {}",
+                    fmt_time_delta_short(TimeDelta::seconds(timestamp.abs() as i64)),
+                )?;
+                if !finished {
+                    write!(
+                        fmt,
+                        "\\({}\\)",
+                        escape_func(&parse_num_with_unit(
+                            timestamp.abs() * self.egg_laying_rate.unwrap_or(0.0)
+                        ))
+                    )?
+                }
+            }
+
+            write!(
+                fmt,
+                " _Score:_ __{}__ {}",
+                self.score() as i64,
+                self.finalized()
+            )?;
+            Ok(fmt)
+        }
     }
 
     #[derive(Clone)]

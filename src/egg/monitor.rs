@@ -301,7 +301,7 @@ impl Monitor {
                         decode_data::<_, ContractCoopStatusResponse>(original, false).is_ok_and(
                             |x| {
                                 log::debug!(
-                                    "old: {}, {} new: {amount} {remain} {} {}",
+                                    "amount: {}, {amount} remain: {} {remain} {} {}",
                                     x.total_amount(),
                                     x.seconds_remaining(),
                                     x.total_amount() > amount,

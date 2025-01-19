@@ -306,20 +306,27 @@ impl ContractCommand {
         }
     }
 
-    fn keyboard(&self) -> InlineKeyboardMarkup {
+    fn keyboard(&self, detail: bool) -> InlineKeyboardMarkup {
+        let detail = detail.then(|| " detail").unwrap_or("");
         InlineKeyboardMarkup::new(match &self {
             ContractCommand::Calc { ei, id, .. } => [[
-                InlineKeyboardButton::callback("Refresh", format!("contract calc {ei} {id}")),
+                InlineKeyboardButton::callback(
+                    "Refresh",
+                    format!("contract calc {ei} {id}{detail}"),
+                ),
                 InlineKeyboardButton::callback(
                     "Refresh inline",
-                    format!("contract-i calc {ei} {id}"),
+                    format!("contract-i calc {ei} {id}{detail}"),
                 ),
             ]],
             ContractCommand::CalcRoom { id, room, .. } => [[
-                InlineKeyboardButton::callback("Refresh", format!("contract room {id} {room}")),
+                InlineKeyboardButton::callback(
+                    "Refresh",
+                    format!("contract room {id} {room}{detail}"),
+                ),
                 InlineKeyboardButton::callback(
                     "Refresh inline",
-                    format!("contract-i room {id} {room}"),
+                    format!("contract-i room {id} {room}{detail}"),
                 ),
             ]],
             _ => unreachable!(),
@@ -710,7 +717,7 @@ async fn handle_list_contracts(
         .into_iter()
         .map(|contract| {
             format!(
-                "{} {} {} {}",
+                "`{}` `{}` {} {}",
                 replace_all(contract.id()),
                 replace_all(contract.room()),
                 replace_all(&{
@@ -744,15 +751,16 @@ async fn handle_calc_score(
 ) -> anyhow::Result<()> {
     let is_admin = arg.check_admin(chat_id);
 
-    match event {
-        ContractCommand::CalcRoom { .. } => {
+    let detail = match event {
+        ContractCommand::CalcRoom { detail, .. } => {
             if !is_admin {
                 bot.send_message(chat_id, "Permission denied").await?;
 
                 return Ok(());
             }
+            detail
         }
-        ContractCommand::Calc { ei, .. } => {
+        ContractCommand::Calc { ei, detail, .. } => {
             if !is_admin
                 && !arg
                     .database()
@@ -766,19 +774,20 @@ async fn handle_calc_score(
 
                 return Ok(());
             }
+            detail
         }
         _ => unreachable!(),
-    }
+    };
 
-    match process_calc(arg, event, inline).await {
+    match process_calc(arg, event, *detail, inline).await {
         Ok(res) => {
             if inline {
                 bot.edit_message_text(chat_id, message_id, res)
-                    .reply_markup(event.keyboard())
+                    .reply_markup(event.keyboard(*detail))
                     .await
             } else {
                 bot.send_message(chat_id, res)
-                    .reply_markup(event.keyboard())
+                    .reply_markup(event.keyboard(*detail))
                     .await
             }
         }
@@ -795,12 +804,11 @@ async fn handle_calc_score(
 async fn process_calc(
     arg: Arc<NecessaryArg>,
     event: &ContractCommand,
+    detail: bool,
     inline: bool,
 ) -> anyhow::Result<String> {
-    let (contract_id, _detail) = match event {
-        ContractCommand::Calc { id, detail, .. } | ContractCommand::CalcRoom { id, detail, .. } => {
-            (id, detail)
-        }
+    let contract_id = match event {
+        ContractCommand::Calc { id, .. } | ContractCommand::CalcRoom { id, .. } => id,
         _ => unreachable!(),
     };
 
@@ -891,19 +899,9 @@ async fn process_calc(
         .member()
         .iter()
         .map(|member| {
-            format!(
-                "*{}* _Shipped:_ {} _ELR:_ {} _SR:_ {} _Score:_ __{}__{}",
-                replace_all(member.username()),
-                replace_all(&member.amount()),
-                if let Some(elr) = member.elr() {
-                    replace_all(&elr).into_owned()
-                } else {
-                    "N/A".into()
-                },
-                replace_all(&member.sr()),
-                member.score() as i64,
-                member.finalized()
-            )
+            member
+                .print(detail, Some(timestamp), score.is_finished(), replace_all)
+                .unwrap()
         })
         .join("\n");
 
@@ -929,7 +927,7 @@ async fn process_calc(
         last_update = replace_all(&timestamp_to_string(timestamp)),
         msg_update = if inline {
             format!(
-                "Result update timestamp: {}\n",
+                "Score update timestamp: {}\n",
                 replace_all(&timestamp_to_string(current_time))
             )
         } else {
