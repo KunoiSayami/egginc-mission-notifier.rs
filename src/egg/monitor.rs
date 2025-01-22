@@ -297,7 +297,7 @@ impl Monitor {
                     contract.coop_identifier().into(),
                     super::functions::encode_to_byte(contract),
                     contract.cleared_for_exit() || contract.all_members_reporting(),
-                    Some(((amount, remain), |original, (amount, remain)| {
+                    Some(((amount, remain), |original: &[u8], (amount, remain)| {
                         decode_data::<_, ContractCoopStatusResponse>(original, false).is_ok_and(
                             |x| {
                                 log::debug!(

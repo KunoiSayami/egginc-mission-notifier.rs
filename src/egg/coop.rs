@@ -164,7 +164,12 @@ mod types {
     use chrono::TimeDelta;
 
     use crate::{
-        egg::{functions::grade_to_big_g, proto::contract::PlayerGrade, types::ContractGradeSpec},
+        egg::{
+            definitions::{DEFAULT_EARNING_BONUS_ROLE, EARNING_BONUS_ROLE},
+            functions::grade_to_big_g,
+            proto::contract::PlayerGrade,
+            types::ContractGradeSpec,
+        },
         types::{fmt_time_delta_short, ContractSpec},
     };
 
@@ -224,6 +229,7 @@ mod types {
         finalized: bool,
         #[allow(unused)]
         timestamp: Option<f64>,
+        soul_power: f64,
         score: f64,
     }
 
@@ -284,20 +290,29 @@ mod types {
                 escape_func(&self.sr()),
             )?;
 
-            if let Some(timestamp) = detail.then_some(self.timestamp(cache_timestamp)).flatten() {
+            if detail {
                 write!(
                     fmt,
-                    " _Offline_: {}",
-                    fmt_time_delta_short(TimeDelta::seconds(timestamp.abs() as i64)),
+                    " _EB%_: {} \\({}\\)",
+                    escape_func(&parse_num_with_unit(10.0f64.powf(self.soul_power) * 100.0)),
+                    self.eb_role()
                 )?;
-                if !finished {
+
+                if let Some(timestamp) = self.timestamp(cache_timestamp) {
                     write!(
                         fmt,
-                        "\\({}\\)",
-                        escape_func(&parse_num_with_unit(
-                            timestamp.abs() * self.egg_laying_rate.unwrap_or(0.0)
-                        ))
-                    )?
+                        " _Offline_: {}",
+                        fmt_time_delta_short(TimeDelta::seconds(timestamp.abs() as i64)),
+                    )?;
+                    if !finished {
+                        write!(
+                            fmt,
+                            "\\({}\\)",
+                            escape_func(&parse_num_with_unit(
+                                timestamp.abs() * self.egg_laying_rate.unwrap_or(0.0)
+                            ))
+                        )?
+                    }
                 }
             }
 
@@ -308,6 +323,16 @@ mod types {
                 self.finalized()
             )?;
             Ok(fmt)
+        }
+
+        fn eb_role(&self) -> &str {
+            EARNING_BONUS_ROLE
+                .get(
+                    (self.soul_power.floor() as usize)
+                        .checked_sub(1)
+                        .unwrap_or(0),
+                )
+                .unwrap_or(&DEFAULT_EARNING_BONUS_ROLE)
         }
     }
 
@@ -455,6 +480,7 @@ mod types {
                     amount: player.contribution_amount(),
                     username: player.user_name().into(),
                     timestamp: player.farm_info.as_ref().map(|x| x.timestamp()),
+                    soul_power: player.soul_power(),
                     score,
                 });
                 /* print!(
