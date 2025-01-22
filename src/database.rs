@@ -1284,12 +1284,7 @@ impl DatabaseHandle {
                 }
 
                 let id = contract_spec.id().to_string();
-                let Ok(body) = minicbor_serde::to_vec(contract_spec.get_inner())
-                    .inspect_err(|e| log::error!("Convert CBOR error {e:?}"))
-                else {
-                    sender.send(false).ok();
-                    return Ok(());
-                };
+                let body = minicbor_serde::to_vec(contract_spec.get_inner()).unwrap();
                 database
                     .insert_contract_spec(
                         &id,

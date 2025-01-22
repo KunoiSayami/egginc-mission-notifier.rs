@@ -304,10 +304,10 @@ impl Monitor {
                                     "amount: {}, {amount} remain: {} {remain} {} {}",
                                     x.total_amount(),
                                     x.seconds_remaining(),
-                                    x.total_amount() > amount,
-                                    x.seconds_remaining() > remain,
+                                    amount > x.total_amount(),
+                                    remain < x.seconds_remaining(),
                                 );
-                                x.total_amount() <= amount && x.seconds_remaining() < remain
+                                x.total_amount() <= amount && remain <= x.seconds_remaining()
                             },
                         )
                     })),

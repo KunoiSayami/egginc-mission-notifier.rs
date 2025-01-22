@@ -5,6 +5,7 @@ use std::{
     sync::LazyLock,
 };
 
+use base64::Engine;
 use chrono::DateTime;
 use itertools::Itertools as _;
 use rand::distributions::{Alphanumeric, DistString as _};
@@ -21,6 +22,8 @@ pub fn timestamp_to_string(timestamp: i64) -> String {
         .format("%Y-%m-%d %H:%M:%S")
         .to_string()
 }
+
+pub const BASE64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD_NO_PAD;
 
 #[derive(Clone, Debug)]
 pub struct User {
@@ -192,6 +195,24 @@ impl Account {
     pub fn contract_trace(&self) -> bool {
         self.contract_trace
     }
+    pub fn line(&self, username: &str) -> String {
+        format!(
+            "{} *{}* {} {}{}",
+            self.ei,
+            replace_all(self.name()),
+            replace_all(&timestamp_to_string(self.last_fetch)),
+            return_tf_emoji(!self.disabled),
+            if self.contract_trace {
+                format!(
+                    " [📋](t.me/{}?start={})",
+                    username,
+                    BASE64.encode(format!("contract list {}", self.ei()).as_bytes())
+                )
+            } else {
+                "".into()
+            }
+        )
+    }
 }
 
 impl Hash for Account {
@@ -203,20 +224,6 @@ impl Hash for Account {
 impl PartialEq for Account {
     fn eq(&self, other: &Self) -> bool {
         self.ei.eq(other.ei())
-    }
-}
-
-impl std::fmt::Display for Account {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} *{}* {} {}{}",
-            self.ei,
-            replace_all(self.name()),
-            replace_all(&timestamp_to_string(self.last_fetch)),
-            return_tf_emoji(!self.disabled),
-            if self.contract_trace { " 📋" } else { "" }
-        )
     }
 }
 
@@ -301,7 +308,11 @@ impl Hash for SpaceShip {
 }
 
 pub fn return_tf_emoji(input: bool) -> &'static str {
-    if input { "✅" } else { "❌" }
+    if input {
+        "✅"
+    } else {
+        "❌"
+    }
 }
 
 pub fn convert_set(v: Vec<HashSet<SpaceShip>>) -> Vec<SpaceShip> {

@@ -29,6 +29,8 @@ pub struct Telegram {
     api_server: Option<String>,
     #[serde(alias = "key", alias = "api-key", alias = "api")]
     api_key: String,
+
+    username: String,
 }
 
 impl Telegram {
@@ -38,5 +40,9 @@ impl Telegram {
 
     pub fn api_server(&self) -> Option<&String> {
         self.api_server.as_ref()
+    }
+
+    pub fn username(&self) -> &str {
+        &self.username
     }
 }

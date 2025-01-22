@@ -5,6 +5,7 @@ use std::{
 
 use admin::handle_admin_command;
 use anyhow::anyhow;
+use base64::Engine;
 use chrono::TimeDelta;
 use itertools::Itertools;
 use reqwest::ClientBuilder;
@@ -30,7 +31,7 @@ use crate::{
         monitor::{MonitorHelper, LAST_QUERY},
         query_coop_status,
     },
-    types::{fmt_time_delta_short, return_tf_emoji, timestamp_to_string, SpaceShip},
+    types::{fmt_time_delta_short, return_tf_emoji, timestamp_to_string, SpaceShip, BASE64},
     CHECK_PERIOD, FETCH_PERIOD,
 };
 
@@ -343,7 +344,26 @@ enum Command {
     Missions { user: String },
     Recent { user: String },
     Admin { line: String },
+    Start { args: String },
     Ping,
+}
+
+impl Command {
+    fn decode_inner(s: String) -> Option<Self> {
+        let content = BASE64
+            .decode(s.as_bytes())
+            .ok()
+            .and_then(|x| String::from_utf8(x).ok())?;
+        let (first, second) = content.split_once(' ')?;
+        match first {
+            "contract" => Some(Self::Contract { cmd: second.into() }),
+            _ => None,
+        }
+    }
+
+    fn decode(s: String) -> Self {
+        Self::decode_inner(s.clone()).unwrap_or_else(|| Self::Start { args: s })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -351,14 +371,21 @@ pub struct NecessaryArg {
     database: DatabaseHelper,
     admin: Vec<ChatId>,
     monitor: MonitorHelper,
+    username: String,
 }
 
 impl NecessaryArg {
-    pub fn new(database: DatabaseHelper, admin: Vec<ChatId>, monitor: MonitorHelper) -> Self {
+    pub fn new(
+        database: DatabaseHelper,
+        admin: Vec<ChatId>,
+        monitor: MonitorHelper,
+        username: String,
+    ) -> Self {
         Self {
             database,
             admin,
             monitor,
+            username,
         }
     }
 
@@ -376,6 +403,10 @@ impl NecessaryArg {
 
     pub fn monitor(&self) -> &MonitorHelper {
         &self.monitor
+    }
+
+    pub fn username(&self) -> &str {
+        &self.username
     }
 }
 
@@ -398,6 +429,7 @@ pub async fn bot_run(
         database,
         config.admin().iter().map(|u| ChatId(*u)).collect(),
         monitor,
+        config.telegram().username().to_string(),
     ));
 
     let handle_message = Update::filter_message().branch(
@@ -421,6 +453,13 @@ pub async fn bot_run(
                         Command::Contract { cmd } => {
                             route_contract_command(bot, arg, msg.chat.id, msg.id, cmd, false).await
                         }
+                        Command::Start { args } => match Command::decode(args) {
+                            Command::Contract { cmd } => {
+                                route_contract_command(bot, arg, msg.chat.id, msg.id, cmd, false)
+                                    .await
+                            }
+                            _ => Ok(()),
+                        },
                     }
                 },
             ),
@@ -573,7 +612,7 @@ async fn handle_list_command(
 
     bot.send_message(
         msg.chat.id,
-        ret.into_iter().map(|s| s.to_string()).join("\n"),
+        ret.into_iter().map(|s| s.line(arg.username())).join("\n"),
     )
     .await?;
 
@@ -716,7 +755,7 @@ async fn handle_list_contracts(
         .into_iter()
         .map(|contract| {
             format!(
-                "`{}` `{}` {} {}",
+                "`{}` `{}` {} [{}](https://t.me/{}?start={})",
                 replace_all(contract.id()),
                 replace_all(contract.room()),
                 replace_all(&{
@@ -726,7 +765,11 @@ async fn handle_list_contracts(
                         "Unknown".into()
                     }
                 }),
-                return_tf_emoji(contract.finished())
+                return_tf_emoji(contract.finished()),
+                arg.username(),
+                base64::engine::general_purpose::STANDARD_NO_PAD.encode(
+                    format!("contract room {} {}", contract.id(), contract.room()).as_bytes()
+                )
             )
         })
         .join("\n");
