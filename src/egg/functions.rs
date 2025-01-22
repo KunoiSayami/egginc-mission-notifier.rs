@@ -24,7 +24,7 @@ pub(crate) fn parse_num_with_unit(mut num: f64) -> String {
 }
 
 pub(super) fn encode_to_base64<T: prost::Message>(input: &T) -> String {
-    BASE64_STANDARD.encode(&encode_to_byte(input))
+    BASE64_STANDARD.encode(encode_to_byte(input))
 }
 
 pub(crate) fn encode_to_byte<T: prost::Message>(input: &T) -> Vec<u8> {
@@ -47,7 +47,7 @@ pub fn build_basic_info(ei: Option<String>) -> Option<proto::BasicRequestInfo> {
     })
 }
 
-/// /ei/coop_status_basic
+// /ei/coop_status_basic
 /* pub fn build_join_request(contract_id: &str, coop_id: &str, ei: Option<String>) -> String {
     let user = ei
         .map(std::borrow::Cow::Owned)
@@ -63,7 +63,7 @@ pub fn build_basic_info(ei: Option<String>) -> Option<proto::BasicRequestInfo> {
     encode_to_base64(request)
 } */
 
-/// /ei/query_coop
+// /ei/query_coop
 /* pub fn build_query_coop_request(
     contract_id: &str,
     coop_id: &str,

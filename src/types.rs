@@ -215,7 +215,7 @@ impl std::fmt::Display for Account {
             replace_all(self.name()),
             replace_all(&timestamp_to_string(self.last_fetch)),
             return_tf_emoji(!self.disabled),
-            self.contract_trace.then(|| " 📋").unwrap_or("")
+            if self.contract_trace { " 📋" } else { "" }
         )
     }
 }
@@ -301,13 +301,13 @@ impl Hash for SpaceShip {
 }
 
 pub fn return_tf_emoji(input: bool) -> &'static str {
-    input.then(|| "✅").unwrap_or("❌")
+    if input { "✅" } else { "❌" }
 }
 
 pub fn convert_set(v: Vec<HashSet<SpaceShip>>) -> Vec<SpaceShip> {
     v.into_iter()
         .reduce(|mut acc, x| {
-            acc.extend(x.into_iter());
+            acc.extend(x);
             acc
         })
         .map(|h| h.into_iter().collect_vec())

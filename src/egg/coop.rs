@@ -20,9 +20,7 @@ static NUM_STR_RE: LazyLock<regex::Regex> =
 
 #[allow(unused)]
 fn parse_num_str(s: &str) -> Option<f64> {
-    let Some(cap) = NUM_STR_RE.captures(s) else {
-        return None;
-    };
+    let cap = NUM_STR_RE.captures(s)?;
 
     let basic = cap.get(1).unwrap().as_str().parse().ok()?;
     let Some(unit) = cap.get(3) else {
@@ -157,7 +155,7 @@ pub fn decode_and_calc_score(
     )); */
 
     //println!("{res:#?}");
-    Ok(CoopScore::calc(res, &spec).map_err(|e| anyhow!("{e}"))?)
+    CoopScore::calc(res, &spec).map_err(|e| anyhow!("{e}"))
 }
 
 mod types {
@@ -256,7 +254,7 @@ mod types {
         }
 
         pub fn finalized(&self) -> &'static str {
-            self.finalized.then(|| " ✅").unwrap_or_default()
+            self.finalized.then_some(" ✅").unwrap_or_default()
         }
 
         pub fn timestamp(&self, cache_timestamp: Option<i64>) -> Option<f64> {
@@ -474,6 +472,7 @@ mod types {
             (completion_time, expect_remain_time, remain_time, players)
         }
 
+        #[allow(clippy::too_many_arguments)]
         fn calc_score(
             // Egg laying per second per hen * population
             total_elr: Option<f64>,
@@ -557,10 +556,10 @@ mod types {
         }
 
         pub fn is_finished(&self) -> bool {
-            match self.status {
-                CompletionLevel::Completed | CompletionLevel::Cleared => true,
-                _ => false,
-            }
+            matches!(
+                self.status,
+                CompletionLevel::Completed | CompletionLevel::Cleared
+            )
         }
 
         pub fn emoji(&self) -> String {

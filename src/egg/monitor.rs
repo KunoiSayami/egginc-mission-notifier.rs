@@ -345,10 +345,11 @@ impl Monitor {
                 "{}: {}{}",
                 contract.contract_identifier(),
                 contract.coop_identifier(),
-                contract
-                    .cleared_for_exit()
-                    .then(|| " finished")
-                    .unwrap_or("")
+                if contract.cleared_for_exit() {
+                    " finished"
+                } else {
+                    ""
+                }
             ))
         }
 

@@ -806,8 +806,7 @@ impl Database {
         let start_time = self
             .query_id_room_with_start_time(id, room)
             .await?
-            .map(|x| x.start_time())
-            .flatten();
+            .and_then(|x| x.start_time());
 
         sqlx::query(
             r#"UPDATE "player_contract"
@@ -966,6 +965,8 @@ impl DatabaseCheckExt for Database {
     }
 }
 
+type CheckerArg = ((f64, f64), fn(&[u8], (f64, f64)) -> bool);
+
 kstool_helper_generator::oneshot_helper! {
 #[derive(Debug)]
 pub enum DatabaseEvent {
@@ -1090,7 +1091,7 @@ pub enum DatabaseEvent {
         room: String,
         cache: Vec<u8>,
         cleared: bool,
-        amount_to_check: Option<((f64, f64), fn(&[u8], (f64, f64)) -> bool)>,
+        amount_to_check: Option<CheckerArg>,
     },
     ContractCacheUpdateTimestamp {
         id: String,
@@ -1283,7 +1284,7 @@ impl DatabaseHandle {
                 }
 
                 let id = contract_spec.id().to_string();
-                let Ok(body) = minicbor_serde::to_vec(&contract_spec.get_inner())
+                let Ok(body) = minicbor_serde::to_vec(contract_spec.get_inner())
                     .inspect_err(|e| log::error!("Convert CBOR error {e:?}"))
                 else {
                     sender.send(false).ok();

@@ -11,7 +11,7 @@ pub(super) const DEFAULT_USER: &[u8] = &[
     69, 73, 54, 50, 57, 49, 57, 52, 48, 57, 54, 56, 50, 51, 53, 48, 48, 56,
 ];
 
-pub(super) const UNIT: &[&'static str] = &[
+pub(super) const UNIT: &[&str] = &[
     "", "K", "M", "B", "T", "q", "Q", "s", "S", "o", "N", "d", "U", "D", "Td", "qd", "Qd", "sd",
     "Sd", "Od", "Nd", "V", "uV", "dV", "tV", "qV", "QV", "sV", "SV", "OV", "NV", "tT",
 ];
@@ -23,6 +23,6 @@ pub(super) const API_BACKEND: &str = determine_api();
 const fn determine_api() -> &'static str {
     match option_env!("API_BACKEND") {
         Some(s) => s,
-        None => &DEFAULT_API_BACKEND,
+        None => DEFAULT_API_BACKEND,
     }
 }

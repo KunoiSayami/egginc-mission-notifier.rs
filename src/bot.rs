@@ -76,8 +76,8 @@ mod admin {
                     "reset-contract" => {
                         if let Some((second1, second2)) = second.split_once(' ') {
                             Ok(Self::ContractCacheReset {
-                                id: &second1,
-                                room: &second2,
+                                id: second1,
+                                room: second2,
                             })
                         } else {
                             Err("Room id missing")
@@ -106,7 +106,7 @@ mod admin {
                     "cache-insert" => {
                         if let Some((second1, second2)) = second.split_once(' ') {
                             if EI_CHECKER_RE.is_match(second1) {
-                                Ok(Self::CacheInsertFake { ei: &second1, land_times: second2.split(' ').filter_map(|x| {
+                                Ok(Self::CacheInsertFake { ei: second1, land_times: second2.split(' ').filter_map(|x| {
                                     x.parse()
                                         .inspect_err(|e| {
                                             log::warn!("Parse {x:?} to number error, ignored: {e:?}")
@@ -121,7 +121,7 @@ mod admin {
                                 return Err("Wrong EI format");
                             }
                             Ok(Self::CacheInsertFake {
-                                ei: &second,
+                                ei: second,
                                 land_times: vec![30, 60, 90],
                             })
                         }
@@ -276,9 +276,8 @@ enum ContractCommand {
 
 impl ContractCommand {
     fn parse(input: String) -> Option<Self> {
-        let Some((first, second)) = input.split_once(' ') else {
-            return None;
-        };
+        let (first, second) = input.split_once(' ')?;
+
         if let Some((second, third)) = second.split_once(' ') {
             let (third, forth) = third.split_once(' ').unwrap_or((third, ""));
             match first {
@@ -307,7 +306,7 @@ impl ContractCommand {
     }
 
     fn keyboard(&self, detail: bool) -> InlineKeyboardMarkup {
-        let detail = detail.then(|| " detail").unwrap_or("");
+        let detail = if detail { " detail" } else { "" };
         InlineKeyboardMarkup::new(match &self {
             ContractCommand::Calc { ei, id, .. } => [[
                 InlineKeyboardButton::callback(
@@ -951,7 +950,11 @@ async fn handle_callback_query(
 
     match first {
         "contract" | "contract-i" => {
-            if let Some(msg) = second.contains(' ').then(|| msg.message.as_ref()).flatten() {
+            if let Some(msg) = second
+                .contains(' ')
+                .then_some(msg.message.as_ref())
+                .flatten()
+            {
                 route_contract_command(
                     bot.clone(),
                     arg,
