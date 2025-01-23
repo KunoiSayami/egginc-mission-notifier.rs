@@ -29,7 +29,7 @@ pub struct Telegram {
     api_server: Option<String>,
     #[serde(alias = "key", alias = "api-key", alias = "api")]
     api_key: String,
-
+    #[serde(alias = "name", alias = "bot-id")]
     username: String,
 }
 

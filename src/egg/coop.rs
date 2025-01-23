@@ -230,6 +230,7 @@ mod types {
         #[allow(unused)]
         timestamp: Option<f64>,
         soul_power: f64,
+        permit_level: Option<u32>,
         score: f64,
     }
 
@@ -298,6 +299,10 @@ mod types {
                     self.eb_role()
                 )?;
 
+                if self.permit_level.is_some_and(|x| x == 1) {
+                    write!(fmt, "⭐")?;
+                }
+
                 if let Some(timestamp) = self.timestamp(cache_timestamp) {
                     write!(
                         fmt,
@@ -313,6 +318,8 @@ mod types {
                             ))
                         )?
                     }
+                } else {
+                    write!(fmt, " \\[Private\\]")?;
                 }
             }
 
@@ -481,6 +488,7 @@ mod types {
                     username: player.user_name().into(),
                     timestamp: player.farm_info.as_ref().map(|x| x.timestamp()),
                     soul_power: player.soul_power(),
+                    permit_level: player.farm_info.as_ref().map(|x| x.permit_level()),
                     score,
                 });
                 /* print!(

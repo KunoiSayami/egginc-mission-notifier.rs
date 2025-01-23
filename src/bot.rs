@@ -44,7 +44,7 @@ pub static EI_CHECKER_RE: LazyLock<regex::Regex> =
 pub static COOP_ID_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[\w]+(-[\w\d]+)*$").unwrap());
 pub static ROOM_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"^[\w\d\-]+$").unwrap());
+    LazyLock::new(|| regex::Regex::new(r"^[\w\d][\-\w\d]*$").unwrap());
 
 pub fn replace_all(s: &str) -> std::borrow::Cow<'_, str> {
     TELEGRAM_ESCAPE_RE.replace_all(s, "\\$1")
@@ -437,29 +437,35 @@ pub async fn bot_run(
             .filter(|msg: Message| msg.chat.is_private())
             .filter_command::<Command>()
             .endpoint(
-                |msg: Message, bot: BotType, arg: Arc<NecessaryArg>, cmd: Command| async move {
-                    match cmd {
-                        Command::Ping => handle_ping(bot, msg, arg).await,
-                        Command::Add { ei } => handle_add_command(bot, arg, msg, ei).await,
-                        Command::Delete { ei } => handle_delete_command(bot, arg, msg, ei).await,
-                        Command::List => handle_list_command(bot, arg, msg).await,
-                        Command::Missions { user } => {
-                            handle_missions_command(bot, arg, msg, user, false).await
-                        }
-                        Command::Recent { user } => {
-                            handle_missions_command(bot, arg, msg, user, true).await
-                        }
-                        Command::Admin { line } => handle_admin_command(bot, arg, msg, line).await,
-                        Command::Contract { cmd } => {
-                            route_contract_command(bot, arg, msg.chat.id, msg.id, cmd, false).await
-                        }
-                        Command::Start { args } => match Command::decode(args) {
+                |msg: Message, bot: BotType, arg: Arc<NecessaryArg>, cmd: Command| {
+                    let cmd = if let Command::Start { args } = cmd {
+                        Command::decode(args)
+                    } else {
+                        cmd
+                    };
+                    async move {
+                        match cmd {
+                            Command::Ping => handle_ping(bot, msg, arg).await,
+                            Command::Add { ei } => handle_add_command(bot, arg, msg, ei).await,
+                            Command::Delete { ei } => {
+                                handle_delete_command(bot, arg, msg, ei).await
+                            }
+                            Command::List => handle_list_command(bot, arg, msg).await,
+                            Command::Missions { user } => {
+                                handle_missions_command(bot, arg, msg, user, false).await
+                            }
+                            Command::Recent { user } => {
+                                handle_missions_command(bot, arg, msg, user, true).await
+                            }
+                            Command::Admin { line } => {
+                                handle_admin_command(bot, arg, msg, line).await
+                            }
                             Command::Contract { cmd } => {
                                 route_contract_command(bot, arg, msg.chat.id, msg.id, cmd, false)
                                     .await
                             }
-                            _ => Ok(()),
-                        },
+                            Command::Start { args: _ } => Ok(()),
+                        }
                     }
                 },
             ),
@@ -755,7 +761,7 @@ async fn handle_list_contracts(
         .into_iter()
         .map(|contract| {
             format!(
-                "`{}` `{}` {} [{}](https://t.me/{}?start={})",
+                "`{}` `{}` {} [{}](t.me/{}?start={})[📋](t.me/{}?start={})",
                 replace_all(contract.id()),
                 replace_all(contract.room()),
                 replace_all(&{
@@ -767,8 +773,13 @@ async fn handle_list_contracts(
                 }),
                 return_tf_emoji(contract.finished()),
                 arg.username(),
-                base64::engine::general_purpose::STANDARD_NO_PAD.encode(
+                BASE64.encode(
                     format!("contract room {} {}", contract.id(), contract.room()).as_bytes()
+                ),
+                arg.username(),
+                BASE64.encode(
+                    format!("contract room {} {} detail", contract.id(), contract.room())
+                        .as_bytes()
                 )
             )
         })
