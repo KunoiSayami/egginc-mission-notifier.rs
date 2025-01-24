@@ -1020,6 +1020,7 @@ async fn process_calc(
                             bytes.clone(),
                             raw.cleared_for_exit() || raw.all_members_reporting(),
                             None,
+                            None,
                         )
                         .await;
                     (current_time, room.clone(), bytes)

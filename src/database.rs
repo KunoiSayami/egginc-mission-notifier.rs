@@ -965,7 +965,7 @@ impl DatabaseCheckExt for Database {
     }
 }
 
-type CheckerArg = ((f64, f64), fn(&[u8], (f64, f64)) -> bool);
+type CheckerArg = ((f64, f64, i64), fn((&[u8], i64), (f64, f64, i64)) -> bool);
 
 kstool_helper_generator::oneshot_helper! {
 #[derive(Debug)]
@@ -1091,7 +1091,8 @@ pub enum DatabaseEvent {
         room: String,
         cache: Vec<u8>,
         cleared: bool,
-        amount_to_check: Option<CheckerArg>,
+        timestamp: Option<i64>,
+        cache_checker: Option<CheckerArg>,
     },
     ContractCacheUpdateTimestamp {
         id: String,
@@ -1251,14 +1252,16 @@ impl DatabaseHandle {
                 room,
                 cache,
                 cleared,
-                amount_to_check,
+                cache_checker,
+                timestamp,
                 __private_sender,
             } => {
-                let current = kstool::time::get_current_second() as i64;
+                let current =
+                    timestamp.unwrap_or_else(|| kstool::time::get_current_second() as i64);
                 if let Some(original_cache) = database.query_contract_cache(&id, &room).await? {
                     __private_sender.send(true).ok();
-                    if let Some((amount, checker)) = amount_to_check {
-                        if !checker(original_cache.body(), amount) {
+                    if let Some((args, checker)) = cache_checker {
+                        if !checker((original_cache.body(), original_cache.timestamp()), args) {
                             //log::warn!("Trying update outdated cache, skip");
                             return Ok(());
                         }

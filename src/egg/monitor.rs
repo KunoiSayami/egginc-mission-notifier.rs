@@ -220,7 +220,7 @@ impl Monitor {
         ei: &str,
         database: &DatabaseHelper,
         info: &super::proto::EggIncFirstContactResponse,
-    ) {
+    ) -> Option<()> {
         /* {
             let file = tokio::fs::OpenOptions::new()
                 .create(true)
@@ -234,9 +234,10 @@ impl Monitor {
             }
         } */
 
-        let Some(contracts) = info.backup.as_ref().and_then(|x| x.contracts.as_ref()) else {
-            return;
-        };
+        let backup = info.backup.as_ref()?;
+        let backup_timestamp = backup.approx_time();
+
+        let contracts = backup.contracts.as_ref()?;
 
         for local_contract in contracts.contracts.iter().chain(contracts.archive.iter()) {
             let Some(ref contract) = local_contract.contract else {
@@ -278,15 +279,12 @@ impl Monitor {
         //log_output.clear();
         let mut log_output = vec![];
 
-        let Some(contracts) = info
+        let contracts = &info
             .backup
-            .as_ref()
-            .and_then(|x| x.contracts.as_ref())
-            .map(|x| &x.current_coop_statuses)
-        else {
-            //log::trace!("No coop status found in {ei}");
-            return;
-        };
+            .as_ref()?
+            .contracts
+            .as_ref()?
+            .current_coop_statuses;
 
         for contract in contracts {
             let amount = contract.total_amount();
@@ -297,20 +295,28 @@ impl Monitor {
                     contract.coop_identifier().into(),
                     super::functions::encode_to_byte(contract),
                     contract.cleared_for_exit() || contract.all_members_reporting(),
-                    Some(((amount, remain), |original: &[u8], (amount, remain)| {
-                        decode_data::<_, ContractCoopStatusResponse>(original, false).is_ok_and(
-                            |x| {
-                                log::debug!(
-                                    "amount: {}, {amount} remain: {} {remain} {} {}",
-                                    x.total_amount(),
-                                    x.seconds_remaining(),
-                                    amount > x.total_amount(),
-                                    remain < x.seconds_remaining(),
-                                );
-                                x.total_amount() <= amount //&& remain <= x.seconds_remaining()
-                            },
-                        )
-                    })),
+                    Some(backup_timestamp as i64),
+                    Some((
+                        (amount, remain, backup_timestamp as i64),
+                        |(original, original_timestamp), (amount, remain, backup_timestamp)| {
+                            decode_data::<_, ContractCoopStatusResponse>(original, false).is_ok_and(
+                                |x| {
+                                    let ret = x.total_amount() <= amount
+                                        && original_timestamp <= backup_timestamp;
+                                    //&& remain <= x.seconds_remaining()
+                                    log::debug!(
+                                        "amount: {:.2}, {amount:.2} remain: {:.2} {remain:.2} {} {}, final result: {}",
+                                        x.total_amount(),
+                                        x.seconds_remaining(),
+                                        amount > x.total_amount(),
+                                        remain < x.seconds_remaining(),
+                                        ret
+                                    );
+                                    ret
+                                },
+                            )
+                        },
+                    )),
                 )
                 .await
                 .unwrap_or(false);
@@ -356,6 +362,7 @@ impl Monitor {
         if !log_output.is_empty() {
             log::trace!("{ei} found online contract: {}", log_output.join("; "))
         }
+        Some(())
     }
 
     async fn handle_each_account(

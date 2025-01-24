@@ -574,6 +574,9 @@ mod types {
 
         fn get_timestamp_offset(original_timestamp: f64, cache_timestamp: Option<i64>) -> f64 {
             let current = kstool::time::get_current_second() as f64;
+            if original_timestamp > 100000000.0 {
+                return current - original_timestamp;
+            }
 
             let Some(cache_timestamp) = cache_timestamp else {
                 return original_timestamp;
