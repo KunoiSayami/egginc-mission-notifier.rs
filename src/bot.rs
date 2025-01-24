@@ -1055,7 +1055,7 @@ async fn process_calc(
 
     let result = format!(
         "*\\({grade}\\)* `{contract}` \\[`{room}`\\] {current_status}\n\
-        Target: {amount}/{target} ELR: _{elr}_\n\
+        Target: {amount}/{target} ELR: _{elr}_ Buff: _{buff}_\n\
         Contract timestamp: _{completion_time}_ / _{remain}_ remain\n\
         {sub_title}\n{users}\n\n\
         Contract last update: {last_update}\n\
@@ -1066,6 +1066,7 @@ async fn process_calc(
         grade = score.grade_str(),
         current_status = score.emoji(),
         elr = replace_all(&score.total_known_elr()),
+        buff = replace_all(&score.display_buff()),
         completion_time = fmt_time_delta_short(TimeDelta::seconds(score.completion_time() as i64)),
         amount = replace_all(&score.current_amount()),
         target = replace_all(&score.target_amount()),

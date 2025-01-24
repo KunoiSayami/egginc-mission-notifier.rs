@@ -304,7 +304,7 @@ impl Monitor {
                                     let ret = x.total_amount() <= amount
                                         && original_timestamp <= backup_timestamp;
                                     //&& remain <= x.seconds_remaining()
-                                    log::debug!(
+                                    log::trace!(
                                         "amount: {:.2}, {amount:.2} remain: {:.2} {remain:.2} {} {}, final result: {}",
                                         x.total_amount(),
                                         x.seconds_remaining(),

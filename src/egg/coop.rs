@@ -237,6 +237,7 @@ mod types {
         timestamp: Option<f64>,
         soul_power: f64,
         permit_level: Option<u32>,
+        coop_buff: (f64, f64),
         score: f64,
     }
 
@@ -283,7 +284,7 @@ mod types {
             escape_func: fn(&str) -> Cow<'_, str>,
         ) -> Result<String, std::fmt::Error> {
             use std::fmt::Write;
-            let mut fmt = String::new();
+            let mut fmt = String::with_capacity(50);
             write!(
                 fmt,
                 "*{}* _Shipped:_ {} _ELR:_ {} _SR:_ {}",
@@ -305,7 +306,7 @@ mod types {
                     self.eb_role()
                 )?;
 
-                if self.permit_level.is_some_and(|x| x == 1) {
+                if self.permit_level.is_some_and(|x: u32| x == 1) {
                     write!(fmt, "⭐")?;
                 }
 
@@ -327,6 +328,12 @@ mod types {
                 } else {
                     write!(fmt, " \\[Private\\]")?;
                 }
+
+                write!(
+                    fmt,
+                    " \\(E:{:.0}%, L:{:.0}%\\)",
+                    self.coop_buff.0, self.coop_buff.1
+                )?;
             }
 
             write!(
@@ -492,6 +499,16 @@ mod types {
                     timestamp: player.farm_info.as_ref().map(|x| x.timestamp()),
                     soul_power: player.soul_power(),
                     permit_level: player.farm_info.as_ref().map(|x| x.permit_level()),
+                    coop_buff: player
+                        .buff_history
+                        .last()
+                        .map(|x| {
+                            (
+                                (x.earnings() - 1.0) * 100.0,
+                                (x.egg_laying_rate() - 1.0) * 100.0,
+                            )
+                        })
+                        .unwrap_or_default(),
                     score,
                 });
                 /* print!(
@@ -622,6 +639,19 @@ mod types {
                     .sum::<f64>()
                     * 3600.0,
             )
+        }
+
+        fn total_buff(&self) -> (f64, f64) {
+            self.member.iter().fold((0.0, 0.0), |(mut eb, mut lb), x| {
+                eb += x.coop_buff.0;
+                lb += x.coop_buff.1;
+                (eb, lb)
+            })
+        }
+
+        pub fn display_buff(&self) -> String {
+            let (e, l) = self.total_buff();
+            format!("E: {e:.0}%, L: {l:.0}%")
         }
     }
 }
