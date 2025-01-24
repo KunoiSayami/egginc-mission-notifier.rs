@@ -101,6 +101,13 @@ fn parse_num_str(s: &str) -> Option<f64> {
     Ok(res)
 } */
 
+pub fn decode_coop_status(
+    data: &[u8],
+    authorized: bool,
+) -> anyhow::Result<proto::ContractCoopStatusResponse> {
+    decode_data(data, authorized)
+}
+
 pub async fn query_coop_status(
     client: &Client,
     contract_id: &str,
@@ -227,7 +234,6 @@ mod types {
         shipping_rate: Option<f64>,
         egg_laying_rate: Option<f64>,
         finalized: bool,
-        #[allow(unused)]
         timestamp: Option<f64>,
         soul_power: f64,
         permit_level: Option<u32>,

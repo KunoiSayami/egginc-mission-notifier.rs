@@ -17,9 +17,13 @@ use crate::{bot::replace_all, egg::types::ContractGradeSpec};
 pub static DEFAULT_NICKNAME: LazyLock<String> = LazyLock::new(|| "N/A".to_string());
 
 pub fn timestamp_to_string(timestamp: i64) -> String {
+    timestamp_fmt(timestamp, "%Y-%m-%d %H:%M:%S")
+}
+
+pub fn timestamp_fmt(timestamp: i64, fmt: &str) -> String {
     let time = DateTime::from_timestamp(timestamp, 0).unwrap();
     time.with_timezone(&chrono_tz::Asia::Taipei)
-        .format("%Y-%m-%d %H:%M:%S")
+        .format(fmt)
         .to_string()
 }
 

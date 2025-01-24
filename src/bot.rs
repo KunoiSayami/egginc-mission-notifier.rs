@@ -51,20 +51,59 @@ pub fn replace_all(s: &str) -> std::borrow::Cow<'_, str> {
 }
 
 mod admin {
-    use teloxide::prelude::Requester;
+    use teloxide::{prelude::Requester, types::InputFile};
+
+    use crate::{egg::decode_coop_status, types::timestamp_fmt};
 
     use super::*;
 
     //#[derive(Clone, Copy, Debug)]
     pub(super) enum AdminCommand<'a> {
-        Query { ei: Option<&'a str> },
-        ResetNotify { ei: &'a str, limit: i32 },
-        UserToggle { ei: &'a str, enabled: bool },
-        ContractToggle { ei: &'a str, enabled: bool },
-        ContractCacheReset { id: &'a str, room: &'a str },
-        CacheReset { invalidate: bool },
-        CacheInsertFake { ei: &'a str, land_times: Vec<i64> },
+        Query {
+            ei: Option<&'a str>,
+        },
+        ResetNotify {
+            ei: &'a str,
+            limit: i32,
+        },
+        UserToggle {
+            ei: &'a str,
+            enabled: bool,
+        },
+        ContractToggle {
+            ei: &'a str,
+            enabled: bool,
+        },
+        ContractCacheReset {
+            id: &'a str,
+            room: &'a str,
+        },
+        CacheReset {
+            invalidate: bool,
+        },
+        CacheInsertFake {
+            ei: &'a str,
+            land_times: Vec<i64>,
+        },
+        ContractSave {
+            id: &'a str,
+            room: &'a str,
+            ei: Option<&'a str>,
+        },
         ListUsers,
+    }
+
+    impl<'a> AdminCommand<'a> {
+        fn new_save(id: &'a str, room: &'a str, ei: Option<&'a str>) -> Option<Self> {
+            if !COOP_ID_RE.is_match(id)
+                || !ROOM_RE.is_match(room)
+                || ei.is_some_and(|ei| !EI_CHECKER_RE.is_match(ei))
+            {
+                None
+            } else {
+                Some(Self::ContractSave { id, room, ei })
+            }
+        }
     }
 
     impl<'a> TryFrom<&'a str> for AdminCommand<'a> {
@@ -126,6 +165,16 @@ mod admin {
                                 land_times: vec![30, 60, 90],
                             })
                         }
+                    }
+                    "contract-save" => {
+                        let (second1, second2) =
+                            second.split_once(' ').ok_or("Wrong command format")?;
+                        if let Some((second2, second3)) = second2.split_once(' ') {
+                            Self::new_save(second1, second2, Some(second3.trim()))
+                        } else {
+                            Self::new_save(second1, second2, None)
+                        }
+                        .ok_or("Fail in command argument check")
                     }
                     "enable" | "disable" => Ok(Self::UserToggle {
                         ei: second,
@@ -223,6 +272,51 @@ mod admin {
                     .contract_cache_update_timestamp(id.into(), room.into())
                     .await;
                 bot.send_message(msg.chat.id, "Timestamp updated").await
+            }
+            AdminCommand::ContractSave { id, room, ei } => {
+                let ret = if ei.is_none() {
+                    arg.database()
+                        .contract_cache_query(id.into(), room.into())
+                        .await
+                        .flatten()
+                        .and_then(|x| decode_coop_status(&x.extract(), false).ok())
+                } else {
+                    let client = ClientBuilder::new()
+                        .timeout(Duration::from_secs(10))
+                        .build()
+                        .unwrap();
+                    let raw = query_coop_status(&client, id, room, ei.map(|x| x.to_string()))
+                        .await
+                        .inspect_err(|e| log::error!("Query remote error: {e:?}"))
+                        .ok();
+                    raw
+                };
+                match ret {
+                    Some(resp) => {
+                        let s = format!("{resp:#?}");
+                        //bot.send_message(chat_id, text);
+
+                        bot.send_document(
+                            msg.chat.id,
+                            InputFile::memory(s).file_name(format!(
+                                "{}-{id}-{room}-{}.txt",
+                                ei.unwrap_or("None"),
+                                timestamp_fmt(
+                                    kstool::time::get_current_second() as i64,
+                                    "%Y%m%d-%H%M%S"
+                                )
+                            )),
+                        )
+                        .await
+                    }
+                    None => {
+                        bot.send_message(
+                            msg.chat.id,
+                            "Contract not found, try add EI to fetch online",
+                        )
+                        .await
+                    }
+                }
             }
         }?;
         Ok(())
