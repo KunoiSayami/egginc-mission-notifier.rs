@@ -307,7 +307,7 @@ impl Monitor {
                                     amount > x.total_amount(),
                                     remain < x.seconds_remaining(),
                                 );
-                                x.total_amount() <= amount && remain <= x.seconds_remaining()
+                                x.total_amount() <= amount //&& remain <= x.seconds_remaining()
                             },
                         )
                     })),

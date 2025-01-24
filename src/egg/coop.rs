@@ -334,11 +334,7 @@ mod types {
 
         fn eb_role(&self) -> &str {
             EARNING_BONUS_ROLE
-                .get(
-                    (self.soul_power.floor() as usize)
-                        .checked_sub(1)
-                        .unwrap_or(0),
-                )
+                .get(self.soul_power.floor() as usize)
                 .unwrap_or(&DEFAULT_EARNING_BONUS_ROLE)
         }
     }
@@ -421,7 +417,7 @@ mod types {
                         Some((farm_elr, player_offline_egg))
                     })
                     .fold(
-                        (0.001, 0.0),
+                        (0.0, 0.0),
                         |(mut acc, mut offline_egg), (farm_elr, player_offline_egg)| {
                             acc += farm_elr;
                             offline_egg += player_offline_egg;
@@ -429,6 +425,7 @@ mod types {
                             (acc, offline_egg)
                         },
                     );
+                let total_elr = if total_elr == 0.0 { 0.001 } else { total_elr };
                 //log::trace!("{} {} {total_elr}", pu(remain), pu(offline_egg));
                 let expect_remain_time = (remain - offline_egg) / total_elr;
                 (
