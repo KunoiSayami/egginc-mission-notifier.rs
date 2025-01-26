@@ -12,7 +12,9 @@ use teloxide::prelude::Requester;
 use tokio::{task::JoinHandle, time::interval};
 
 use crate::bot::replace_all;
-use crate::types::{convert_set, timestamp_to_string, AccountMap, ContractSpec, SpaceShip};
+use crate::types::{
+    convert_set, timestamp_to_string, AccountMap, ContractSpec, QueryError, SpaceShip,
+};
 use crate::CACHE_REQUEST_OFFSET;
 use crate::{
     bot::BotType, database::DatabaseHelper, types::Account, CACHE_REFRESH_PERIOD, CHECK_PERIOD,
@@ -372,7 +374,7 @@ impl Monitor {
         database: &DatabaseHelper,
         bot: &BotType,
         helper: &MonitorHelper,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool, QueryError> {
         if !account.force_fetch(current_time)
             && database
                 .mission_query_by_account(account.ei().to_string())
@@ -399,7 +401,7 @@ impl Monitor {
         Self::check_username(account, database, &account_map, bot, &info.backup).await?;
 
         let Some(missions) = get_missions(info) else {
-            return Err(anyhow!("Player {} missions field is missing", account.ei()));
+            return Err(anyhow!("Player {} missions field is missing", account.ei()).into());
             //bot.send_message(user.user().into(), "Query mission failure");
         };
 
@@ -453,7 +455,8 @@ impl Monitor {
                     pending.join("\n")
                 ),
             )
-            .await?;
+            .await
+            .map_err(|e| anyhow::Error::from(e))?;
         }
 
         Ok(true)
@@ -493,12 +496,17 @@ impl Monitor {
             .await
             .inspect_err(|e| log::error!("Remote query user got error: {e:?}"));
 
-            if *ret.as_ref().unwrap_or(&true) {
+            let fetched = *ret.as_ref().unwrap_or(&true);
+
+            let is_err = ret.is_err();
+            let is_user_error = ret.is_err_and(|x| x.is_user_error());
+
+            if fetched {
                 database
-                    .account_update(account.ei().to_string(), ret.is_err())
+                    .account_update(account.ei().to_string(), is_user_error)
                     .await;
             }
-            if ret.is_err() {
+            if is_err {
                 for user in database
                     .account_query_users(account.ei().to_string())
                     .await
@@ -507,7 +515,11 @@ impl Monitor {
                 {
                     bot.send_message(
                         user,
-                        format!("Remote query got error, disable {}", account.ei()),
+                        if is_user_error {
+                            format!("Remote query got error, disable `{}`", account.ei())
+                        } else {
+                            format!("Remote query got error, please check `{}`", account.ei())
+                        },
                     )
                     .await
                     .inspect_err(|e| log::error!("Send message to user {} error: {e:?}", user.0))

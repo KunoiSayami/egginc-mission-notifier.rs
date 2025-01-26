@@ -5,6 +5,8 @@ use base64::{prelude::BASE64_STANDARD, Engine};
 use flate2::bufread::ZlibDecoder;
 use reqwest::Client;
 
+use crate::types::QueryError;
+
 use super::definitions::*;
 use super::proto;
 //use super::proto::contract::GradeSpec;
@@ -156,7 +158,7 @@ pub fn get_missions(data: proto::EggIncFirstContactResponse) -> Option<Vec<Space
 pub async fn request(
     client: &Client,
     ei: &str,
-) -> anyhow::Result<proto::EggIncFirstContactResponse> {
+) -> Result<proto::EggIncFirstContactResponse, QueryError> {
     let form = [("data", build_first_contract_request(ei.to_string()))]
         .into_iter()
         .collect::<HashMap<_, _>>();
@@ -164,9 +166,12 @@ pub async fn request(
         .post(format!("{API_BACKEND}/ei/bot_first_contact"))
         .form(&form)
         .send()
-        .await?
-        .error_for_status()?;
-    let data = decode_data(&resp.text().await?, false)?;
+        .await
+        .map_err(|e| QueryError::System(e))?
+        .error_for_status()
+        .map_err(|e| QueryError::User(e))?;
+    let data = decode_data(&resp.text().await.map_err(|e| QueryError::User(e))?, false)
+        .map_err(|e| QueryError::Other(e))?;
     Ok(data)
 }
 
@@ -183,7 +188,7 @@ pub fn grade_to_big_g(grade: proto::contract::PlayerGrade) -> f64 {
 
 pub(crate) fn is_contract_cleared(raw: &[u8]) -> bool {
     let Ok::<proto::ContractCoopStatusResponse, _>(data) = decode_data(raw, false)
-        .inspect_err(|e| log::error!("Decode data error, return false: {e:?}"))
+        .inspect_err(|e| log::error!("Decode data error, returning false: {e:?}"))
     else {
         return false;
     };

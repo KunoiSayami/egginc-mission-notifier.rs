@@ -183,7 +183,7 @@ mod types {
     use super::parse_num_with_unit;
 
     fn calc_timestamp(timestamp: f64) -> f64 {
-        if timestamp < 0.0 {
+        if timestamp <= 0.0 {
             timestamp.abs()
         } else {
             kstool::time::get_current_duration().as_millis() as f64 / 1000.0 - timestamp
@@ -280,7 +280,7 @@ mod types {
             &self,
             detail: bool,
             cache_timestamp: Option<i64>,
-            finished: bool,
+            cleared: bool,
             escape_func: fn(&str) -> Cow<'_, str>,
         ) -> Result<String, std::fmt::Error> {
             use std::fmt::Write;
@@ -310,23 +310,19 @@ mod types {
                     write!(fmt, "⭐")?;
                 }
 
-                if let Some(timestamp) = self.timestamp(cache_timestamp) {
-                    write!(
-                        fmt,
-                        " _Offline_: {}",
-                        fmt_time_delta_short(TimeDelta::seconds(timestamp.abs() as i64)),
-                    )?;
-                    if !finished {
+                if !cleared && !self.finalized {
+                    if let Some(timestamp) = self.timestamp(cache_timestamp) {
                         write!(
                             fmt,
-                            "\\({}\\)",
+                            " _Offline_: {} \\({}\\)",
+                            fmt_time_delta_short(TimeDelta::seconds(timestamp.abs() as i64)),
                             escape_func(&parse_num_with_unit(
                                 timestamp.abs() * self.egg_laying_rate.unwrap_or(0.0)
                             ))
-                        )?
+                        )?;
+                    } else {
+                        write!(fmt, " \\[Private\\]")?;
                     }
-                } else {
-                    write!(fmt, " \\[Private\\]")?;
                 }
 
                 write!(
@@ -477,6 +473,8 @@ mod types {
                     .map(|s| (s.elr() * s.farm_population(), s.sr()))
                     .unzip();
 
+                let user_timestamp = player.farm_info.as_ref().map(|x| x.timestamp());
+
                 let score = Self::calc_score(
                     egg_laying_rate.and_then(|elr| Some(elr.min(shipping_rate?))),
                     player.contribution_amount(),
@@ -488,6 +486,7 @@ mod types {
                     coop_total_time,
                     completion_time,
                     expect_remain_time,
+                    calc_timestamp(user_timestamp.unwrap_or_default()),
                 );
 
                 players.push(UserScore {
@@ -496,7 +495,7 @@ mod types {
                     finalized: player.finalized(),
                     amount: player.contribution_amount(),
                     username: player.user_name().into(),
-                    timestamp: player.farm_info.as_ref().map(|x| x.timestamp()),
+                    timestamp: user_timestamp,
                     soul_power: player.soul_power(),
                     permit_level: player.farm_info.as_ref().map(|x| x.permit_level()),
                     coop_buff: player
@@ -539,9 +538,10 @@ mod types {
             coop_total_time: f64,
             completion_time: f64,
             expect_remain_time: f64,
+            user_offline_time: f64,
         ) -> f64 {
             let user_total_delivered =
-                contributions + total_elr.unwrap_or(0.0) * expect_remain_time;
+                contributions + total_elr.unwrap_or(0.0) * (expect_remain_time + user_offline_time);
             let ratio = (user_total_delivered * coop_size)
                 / grade_spec
                     .goal3()
@@ -617,6 +617,10 @@ mod types {
                 self.status,
                 CompletionLevel::Completed | CompletionLevel::Cleared
             )
+        }
+
+        pub fn is_cleared(&self) -> bool {
+            matches!(self.status, CompletionLevel::Cleared)
         }
 
         pub fn emoji(&self) -> String {

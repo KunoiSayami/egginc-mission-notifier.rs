@@ -504,3 +504,35 @@ impl From<ContractCache> for Vec<u8> {
     }
 }
  */
+
+#[derive(Debug)]
+pub enum QueryError {
+    System(reqwest::Error),
+    User(reqwest::Error),
+    Other(anyhow::Error),
+}
+
+impl QueryError {
+    pub fn is_user_error(&self) -> bool {
+        matches!(self, Self::User(_))
+    }
+
+    pub fn is_system_error(&self) -> bool {
+        matches!(self, Self::System(_))
+    }
+}
+
+impl From<QueryError> for anyhow::Error {
+    fn from(value: QueryError) -> Self {
+        match value {
+            QueryError::System(error) | QueryError::User(error) => error.into(),
+            QueryError::Other(error) => error,
+        }
+    }
+}
+
+impl From<anyhow::Error> for QueryError {
+    fn from(value: anyhow::Error) -> Self {
+        Self::Other(value)
+    }
+}

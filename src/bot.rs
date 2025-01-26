@@ -1048,7 +1048,7 @@ async fn process_calc(
         .iter()
         .map(|member| {
             member
-                .print(detail, Some(timestamp), score.is_finished(), replace_all)
+                .print(detail, Some(timestamp), score.is_cleared(), replace_all)
                 .unwrap()
         })
         .join("\n");
@@ -1060,7 +1060,7 @@ async fn process_calc(
         {sub_title}\n{users}\n\n\
         Contract last update: {last_update}\n\
         {msg_update}\
-        This score not included your teamwork score\\.",
+        {footer}",
         contract = replace_all(contract_id),
         room = replace_all(&room),
         grade = score.grade_str(),
@@ -1081,6 +1081,11 @@ async fn process_calc(
             )
         } else {
             String::new()
+        },
+        footer = if score.is_finished() && !score.is_cleared() {
+            "This score is included your offline contributions, but not included your teamwork score\\.\n"
+        } else {
+            "This score not included your teamwork score\\."
         }
     );
 
