@@ -520,6 +520,14 @@ impl QueryError {
     pub fn is_system_error(&self) -> bool {
         matches!(self, Self::System(_))
     }
+
+    pub fn err_type(&self) -> &str {
+        match self {
+            QueryError::System(_) => "system",
+            QueryError::User(_) => "user",
+            QueryError::Other(_) => "other",
+        }
+    }
 }
 
 impl From<QueryError> for anyhow::Error {

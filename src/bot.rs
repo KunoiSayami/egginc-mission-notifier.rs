@@ -53,7 +53,10 @@ pub fn replace_all(s: &str) -> std::borrow::Cow<'_, str> {
 mod admin {
     use teloxide::{prelude::Requester, types::InputFile};
 
-    use crate::{egg::decode_coop_status, types::timestamp_fmt};
+    use crate::{
+        egg::{decode_coop_status, ei_request},
+        types::timestamp_fmt,
+    };
 
     use super::*;
 
@@ -89,6 +92,9 @@ mod admin {
             id: &'a str,
             room: &'a str,
             ei: Option<&'a str>,
+        },
+        UserStatusSave {
+            ei: &'a str,
         },
         ListUsers,
     }
@@ -176,6 +182,13 @@ mod admin {
                         }
                         .ok_or("Fail in command argument check")
                     }
+                    "bot-contract-save" => {
+                        if EI_CHECKER_RE.is_match(second) {
+                            Ok(Self::UserStatusSave { ei: second })
+                        } else {
+                            Err("Invalid EI")
+                        }
+                    }
                     "enable" | "disable" => Ok(Self::UserToggle {
                         ei: second,
                         enabled: first.eq("enable"),
@@ -203,6 +216,13 @@ mod admin {
         msg: &Message,
         command: AdminCommand<'a>,
     ) -> anyhow::Result<()> {
+        let build_client = || {
+            ClientBuilder::new()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .unwrap()
+        };
+
         match command {
             AdminCommand::Query { ei } => {
                 if let Some(ei) = ei {
@@ -313,6 +333,34 @@ mod admin {
                         bot.send_message(
                             msg.chat.id,
                             "Contract not found, try add EI to fetch online",
+                        )
+                        .await
+                    }
+                }
+            }
+            AdminCommand::UserStatusSave { ei } => {
+                let client = build_client();
+                match ei_request(&client, ei).await {
+                    Ok(resp) => {
+                        let s = format!("{resp:#?}");
+
+                        bot.send_document(
+                            msg.chat.id,
+                            InputFile::memory(s).file_name(format!(
+                                "{ei}-{}.txt",
+                                timestamp_fmt(
+                                    kstool::time::get_current_second() as i64,
+                                    "%Y%m%d-%H%M%S"
+                                )
+                            )),
+                        )
+                        .await
+                    }
+                    Err(e) => {
+                        log::error!("[User Request] Remote query error: {e:?}");
+                        bot.send_message(
+                            msg.chat.id,
+                            format!("Got {} error, check console", e.err_type()),
                         )
                         .await
                     }
@@ -896,26 +944,16 @@ async fn handle_calc_score(
     event: &ContractCommand,
     inline: bool,
 ) -> anyhow::Result<()> {
-    let is_admin = arg.check_admin(chat_id);
-
     let detail = match event {
-        ContractCommand::CalcRoom { detail, .. } => {
-            if !is_admin {
-                bot.send_message(chat_id, "Permission denied").await?;
-
-                return Ok(());
-            }
-            detail
-        }
+        ContractCommand::CalcRoom { detail, .. } => detail,
         ContractCommand::Calc { ei, detail, .. } => {
-            if !is_admin
-                && !arg
-                    .database()
-                    .account_query(Some(chat_id.0))
-                    .await
-                    .ok_or_else(|| anyhow!("Query user error"))?
-                    .iter()
-                    .any(|x| x.ei().eq(ei))
+            if !arg
+                .database()
+                .account_query(Some(chat_id.0))
+                .await
+                .ok_or_else(|| anyhow!("Query user error"))?
+                .iter()
+                .any(|x| x.ei().eq(ei))
             {
                 bot.send_message(chat_id, "Permission denied").await?;
 

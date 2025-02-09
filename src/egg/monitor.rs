@@ -383,7 +383,7 @@ impl Monitor {
                 .into_iter()
                 .filter(|s| !s.notified())
                 .count()
-                == 3
+                >= 3
         {
             return Ok(false);
         };
