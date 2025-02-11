@@ -21,7 +21,10 @@ pub fn timestamp_to_string(timestamp: i64) -> String {
 }
 
 pub fn timestamp_fmt(timestamp: i64, fmt: &str) -> String {
-    let time = DateTime::from_timestamp(timestamp, 0).unwrap();
+    let Some(time) = DateTime::from_timestamp(timestamp, 0) else {
+        log::warn!("Invalid timestamp: {timestamp}");
+        return "N/A".into();
+    };
     time.with_timezone(&chrono_tz::Asia::Taipei)
         .format(fmt)
         .to_string()
@@ -199,10 +202,14 @@ impl Account {
     pub fn contract_trace(&self) -> bool {
         self.contract_trace
     }
-    pub fn line(&self, username: &str) -> String {
+    pub fn line(&self, username: &str, display_ei: bool) -> String {
         format!(
-            "{} *{}* {} {}{}",
-            self.ei,
+            "{}*{}* {} {}{}",
+            if display_ei {
+                format!("{} ", self.ei)
+            } else {
+                "".into()
+            },
             replace_all(self.name()),
             replace_all(&timestamp_to_string(self.last_fetch)),
             return_tf_emoji(!self.disabled),

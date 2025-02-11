@@ -475,12 +475,13 @@ impl ContractCommand {
 enum Command {
     Add { ei: String },
     Delete { ei: String },
-    List,
+    List { detail: String },
     Contract { cmd: String },
     Missions { user: String },
     Recent { user: String },
     Admin { line: String },
     Start { args: String },
+    Help,
     Ping,
 }
 
@@ -586,7 +587,9 @@ pub async fn bot_run(
                             Command::Delete { ei } => {
                                 handle_delete_command(bot, arg, msg, ei).await
                             }
-                            Command::List => handle_list_command(bot, arg, msg).await,
+                            Command::List { detail } => {
+                                handle_list_command(bot, arg, msg, detail.eq("ei")).await
+                            }
                             Command::Missions { user } => {
                                 handle_missions_command(bot, arg, msg, user, false).await
                             }
@@ -600,6 +603,7 @@ pub async fn bot_run(
                                 route_contract_command(bot, arg, msg.chat.id, msg.id, cmd, false)
                                     .await
                             }
+                            Command::Help => handle_help(bot, msg).await,
                             Command::Start { args: _ } => Ok(()),
                         }
                     }
@@ -735,6 +739,7 @@ async fn handle_list_command(
     bot: BotType,
     arg: Arc<NecessaryArg>,
     msg: Message,
+    show_ei: bool,
 ) -> anyhow::Result<()> {
     let Some(ret) =
         (if arg.check_admin(msg.chat.id) && msg.text().is_some_and(|text| text.contains("all")) {
@@ -754,7 +759,9 @@ async fn handle_list_command(
 
     bot.send_message(
         msg.chat.id,
-        ret.into_iter().map(|s| s.line(arg.username())).join("\n"),
+        ret.into_iter()
+            .map(|s| s.line(arg.username(), show_ei))
+            .join("\n"),
     )
     .await?;
 
@@ -1200,5 +1207,21 @@ async fn handle_callback_query(
         _ => {}
     }
     bot.answer_callback_query(msg.id).await?;
+    Ok(())
+}
+
+async fn handle_help(bot: BotType, msg: Message) -> anyhow::Result<()> {
+    bot.send_message(msg.chat.id, "Usage:\n\
+    /add `\\<EI\\>` Add your account to this bot\\.\n\
+    /list `[ei]` List all EI belong your telegram account\\.\n\
+    /missions Display recent 6 rocket missions\\.\n\
+    /recent Display recent 1 hour land missions\\.\n\
+    /remove `\\<EI\\>` Remove your account from this bot\\.\n\n\
+    Contract rated:\n\
+    `/contract list` List your recent contracts, only available when contract tracker enabled\\.\n\
+    `/contract calc \\<EI\\> \\<contract\\-id\\>` Calculate user's contract score\\.\n\
+    `/contract room \\<contract\\-id\\> \\<room\\-id\\>` Calculate contract score by specify room ID\\.\n\
+    `/contract enable\\|disable <EI>` Enable / Disable contract tracker \\(After add to bot\\)\\.
+    ").await?;
     Ok(())
 }

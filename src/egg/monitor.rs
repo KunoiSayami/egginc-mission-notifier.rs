@@ -4,6 +4,7 @@ use std::sync::LazyLock;
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::anyhow;
+use chrono::TimeDelta;
 use itertools::Itertools;
 use kstool_helper_generator::Helper;
 use reqwest::Client;
@@ -14,7 +15,8 @@ use tokio::{task::JoinHandle, time::interval};
 use crate::bot::replace_all;
 use crate::egg::functions::parse_num_with_unit;
 use crate::types::{
-    convert_set, timestamp_to_string, AccountMap, ContractSpec, QueryError, SpaceShip,
+    convert_set, fmt_time_delta_short, timestamp_to_string, AccountMap, ContractSpec, QueryError,
+    SpaceShip,
 };
 use crate::CACHE_REQUEST_OFFSET;
 use crate::{
@@ -311,8 +313,10 @@ impl Monitor {
                                         "amount: {}, {} remain: {} {} {} {}, final result: {}",
                                         parse_num_with_unit(x.total_amount()),
                                         parse_num_with_unit(amount),
-                                        parse_num_with_unit(x.seconds_remaining()),
-                                        parse_num_with_unit(remain),
+                                        fmt_time_delta_short(TimeDelta::seconds(
+                                            x.seconds_remaining() as i64
+                                        )),
+                                        fmt_time_delta_short(TimeDelta::seconds(remain as i64)),
                                         amount > x.total_amount(),
                                         remain < x.seconds_remaining(),
                                         ret
