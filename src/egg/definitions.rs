@@ -1,5 +1,5 @@
-pub(super) const VERSION: &str = "1.33.6";
-pub(super) const BUILD: &str = "1.33.6.0";
+pub(super) const VERSION: &str = "1.34.1";
+pub(super) const BUILD: &str = "1.34.1.0";
 pub(super) const VERSION_NUM: u32 = 67;
 pub(super) const PLATFORM_STRING: &str = "IOS";
 pub(super) const DEVICE_ID: &str = "egginc-bot";
