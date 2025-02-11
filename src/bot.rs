@@ -74,10 +74,6 @@ mod admin {
             ei: &'a str,
             enabled: bool,
         },
-        ContractToggle {
-            ei: &'a str,
-            enabled: bool,
-        },
         ContractCacheReset {
             id: &'a str,
             room: &'a str,
@@ -194,10 +190,6 @@ mod admin {
                         ei: second,
                         enabled: first.eq("enable"),
                     }),
-                    "enable-c" | "disable-c" => Ok(Self::ContractToggle {
-                        ei: second,
-                        enabled: first.eq("enable-c"),
-                    }),
                     _ => Err("Invalid command"),
                 }
             } else {
@@ -274,19 +266,6 @@ mod admin {
             AdminCommand::CacheInsertFake { ei, land_times } => {
                 arg.monitor().insert_cache(ei.to_string(), land_times).await;
                 bot.send_message(msg.chat.id, "New cache inserted").await
-            }
-            AdminCommand::ContractToggle { ei, enabled } => {
-                arg.database()
-                    .account_contract_update(ei.into(), enabled)
-                    .await;
-                bot.send_message(
-                    msg.chat.id,
-                    format!(
-                        "Change user {ei} contract trace to {}",
-                        if enabled { "enabled" } else { "disabled" }
-                    ),
-                )
-                .await
             }
             AdminCommand::ContractCacheReset { id, room } => {
                 arg.database()

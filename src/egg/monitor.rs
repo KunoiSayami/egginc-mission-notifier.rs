@@ -12,6 +12,7 @@ use teloxide::prelude::Requester;
 use tokio::{task::JoinHandle, time::interval};
 
 use crate::bot::replace_all;
+use crate::egg::functions::parse_num_with_unit;
 use crate::types::{
     convert_set, timestamp_to_string, AccountMap, ContractSpec, QueryError, SpaceShip,
 };
@@ -307,9 +308,11 @@ impl Monitor {
                                         && original_timestamp <= backup_timestamp;
                                     //&& remain <= x.seconds_remaining()
                                     log::trace!(
-                                        "amount: {:.2}, {amount:.2} remain: {:.2} {remain:.2} {} {}, final result: {}",
-                                        x.total_amount(),
-                                        x.seconds_remaining(),
+                                        "amount: {}, {} remain: {} {} {} {}, final result: {}",
+                                        parse_num_with_unit(x.total_amount()),
+                                        parse_num_with_unit(amount),
+                                        parse_num_with_unit(x.seconds_remaining()),
+                                        parse_num_with_unit(remain),
                                         amount > x.total_amount(),
                                         remain < x.seconds_remaining(),
                                         ret

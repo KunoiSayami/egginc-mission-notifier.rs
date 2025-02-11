@@ -464,7 +464,7 @@ impl ContractCache {
     }
 
     pub fn recent(&self) -> bool {
-        self.cleared || (kstool::time::get_current_second() as i64 - self.timestamp) < 30 * 60
+        self.cleared || (kstool::time::get_current_second() as i64 - self.timestamp) < 2 * 60
     }
 
     pub fn timestamp(&self) -> i64 {
