@@ -8,7 +8,7 @@ use std::{
 use base64::Engine;
 use chrono::DateTime;
 use itertools::Itertools as _;
-use rand::distributions::{Alphanumeric, DistString as _};
+use rand::distr::{Alphanumeric, SampleString as _};
 use sqlx::{prelude::FromRow, sqlite::SqliteRow, Row};
 use teloxide::types::ChatId;
 
@@ -286,10 +286,7 @@ impl SpaceShip {
 
     pub fn random(ei: String, land_time: i64) -> Self {
         Self {
-            id: format!(
-                "Faked_{}",
-                Alphanumeric.sample_string(&mut rand::thread_rng(), 16)
-            ),
+            id: format!("Faked_{}", Alphanumeric.sample_string(&mut rand::rng(), 16)),
             name: "Faked".into(),
             duration_type: 4,
             belong: ei,
