@@ -45,6 +45,7 @@ pub static COOP_ID_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[\w]+(-[\w\d]+)*$").unwrap());
 pub static ROOM_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[\w\d][\-\w\d]*$").unwrap());
+static SPACE_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"[\s ]+").unwrap());
 
 pub fn replace_all(s: &str) -> std::borrow::Cow<'_, str> {
     TELEGRAM_ESCAPE_RE.replace_all(s, "\\$1")
@@ -415,10 +416,14 @@ enum ContractCommand {
         room: String,
         detail: bool,
     },
+    Control {
+        enable: bool,
+        ei: String,
+    },
 }
 
 impl ContractCommand {
-    fn parse(input: String) -> Option<Self> {
+    fn parse(input: std::borrow::Cow<'_, str>) -> Option<Self> {
         let (first, second) = input.split_once(' ')?;
 
         if let Some((second, third)) = second.split_once(' ') {
@@ -443,6 +448,16 @@ impl ContractCommand {
         } else {
             match first {
                 "list" if EI_CHECKER_RE.is_match(second) => Some(Self::List { ei: second.into() }),
+                "enable" | "disable" => {
+                    if EI_CHECKER_RE.is_match(second) {
+                        Some(Self::Control {
+                            enable: first.eq("enable"),
+                            ei: second.into(),
+                        })
+                    } else {
+                        None
+                    }
+                }
                 _ => None,
             }
         }
@@ -861,7 +876,8 @@ async fn route_contract_command(
     cmd: String,
     inline: bool,
 ) -> anyhow::Result<()> {
-    let Some(cmd) = ContractCommand::parse(cmd) else {
+    let filtered = SPACE_RE.replace_all(&cmd, " ");
+    let Some(cmd) = ContractCommand::parse(filtered) else {
         bot.send_message(chat_id, "Invalid contract command\\.")
             .await?;
         return Ok(());
@@ -870,6 +886,9 @@ async fn route_contract_command(
         ContractCommand::List { ei } => handle_list_contracts(bot, arg, chat_id, ei).await,
         ContractCommand::Calc { .. } | ContractCommand::CalcRoom { .. } => {
             handle_calc_score(bot, arg, chat_id, message_id, &cmd, inline).await
+        }
+        ContractCommand::Control { enable, ei } => {
+            handle_enable_contract_tracker(bot, chat_id, arg, ei, enable).await
         }
     }
 }
@@ -1128,6 +1147,36 @@ async fn process_calc(
     );
 
     Ok(result)
+}
+
+async fn handle_enable_contract_tracker(
+    bot: BotType,
+    chat_id: ChatId,
+    arg: Arc<NecessaryArg>,
+    ei: String,
+    enable: bool,
+) -> anyhow::Result<()> {
+    if !arg.check_admin(chat_id)
+        && !arg
+            .database()
+            .account_query(Some(chat_id.0))
+            .await
+            .is_some_and(|x| x.iter().any(|account| account.ei().eq(&ei)))
+    {
+        bot.send_message(chat_id, "Permission denied\\.").await?;
+        return Ok(());
+    }
+
+    arg.database().account_contract_update(ei, enable).await;
+    bot.send_message(
+        chat_id,
+        format!(
+            "Set contract tracker to {}",
+            if enable { "enabled" } else { "disabled" }
+        ),
+    )
+    .await?;
+    Ok(())
 }
 
 async fn handle_callback_query(
