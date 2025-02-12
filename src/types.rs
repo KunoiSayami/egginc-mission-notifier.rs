@@ -215,8 +215,7 @@ impl Account {
             return_tf_emoji(!self.disabled),
             if self.contract_trace {
                 format!(
-                    " [📋](t.me/{}?start={})",
-                    username,
+                    " [📋](t.me/{username}?start={})",
                     BASE64.encode(format!("contract list {}", self.ei()).as_bytes())
                 )
             } else {

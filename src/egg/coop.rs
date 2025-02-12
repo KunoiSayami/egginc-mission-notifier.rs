@@ -246,11 +246,15 @@ mod types {
             &self.username
         }
 
-        pub fn elr(&self) -> Option<String> {
+        pub fn real_elr(&self) -> Option<String> {
+            Some(parse_num_with_unit(self.egg_laying_rate? * 3600.0))
+        }
+
+        /* pub fn elr(&self) -> Option<String> {
             Some(parse_num_with_unit(
                 self.egg_laying_rate?.min(self.shipping_rate?) * 3600.0,
             ))
-        }
+        } */
 
         pub fn score(&self) -> f64 {
             self.score
@@ -290,7 +294,7 @@ mod types {
                 "*{}* _Shipped:_ {} _ELR:_ {} _SR:_ {}",
                 escape_func(self.username()),
                 escape_func(&self.amount()),
-                if let Some(elr) = self.elr() {
+                if let Some(elr) = self.real_elr() {
                     escape_func(&elr).into_owned()
                 } else {
                     "N/A".into()
@@ -437,6 +441,10 @@ mod types {
                 let total_elr = if total_elr == 0.0 { 0.001 } else { total_elr };
                 //log::trace!("{} {} {total_elr}", pu(remain), pu(offline_egg));
                 let expect_remain_time = (remain - offline_egg) / total_elr;
+
+                /* let completion_time =
+                coop_total_time - coop.seconds_remaining() + expect_remain_time; */
+
                 (
                     coop_total_time - coop.seconds_remaining() + expect_remain_time,
                     expect_remain_time,
@@ -484,8 +492,8 @@ mod types {
                     coop_size as f64,
                     token_time,
                     coop_total_time,
-                    completion_time,
-                    expect_remain_time,
+                    completion_time - expect_remain_time.min(0.0),
+                    expect_remain_time.max(0.0),
                     calc_timestamp(user_timestamp.unwrap_or_default()),
                 );
 
@@ -522,6 +530,11 @@ mod types {
                     score as i64
                 )); */
             }
+
+            /* log::debug!(
+                "{completion_time} {} {expect_remain_time} {remain_time}",
+                completion_time - expect_remain_time.min(0.0)
+            ); */
             (completion_time, expect_remain_time, remain_time, players)
         }
 

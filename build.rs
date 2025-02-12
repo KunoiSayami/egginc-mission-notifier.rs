@@ -4,6 +4,6 @@ fn main() -> std::io::Result<()> {
         "package.ei",
         "#[derive(serde::Serialize, serde::Deserialize)]",
     ); */
-    prost_build::compile_protos(&["src/ei.proto"], &["src/"])?;
+    prost_build::compile_protos(&["src/egg/ei.proto"], &["src/"])?;
     Ok(())
 }

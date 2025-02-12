@@ -45,7 +45,7 @@ pub static COOP_ID_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[\w]+(-[\w\d]+)*$").unwrap());
 pub static ROOM_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[\w\d][\-\w\d]*$").unwrap());
-static SPACE_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"[\s ]+").unwrap());
+static SPACE_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"[ \t]+").unwrap());
 
 pub fn replace_all(s: &str) -> std::borrow::Cow<'_, str> {
     TELEGRAM_ESCAPE_RE.replace_all(s, "\\$1")
@@ -1076,11 +1076,18 @@ async fn process_calc(
     let score = decode_and_calc_score(contract_spec, &body, false)?;
 
     let sub_title = if !score.is_finished() {
+        let expect = current_time + score.expect_finish_time(Some(timestamp)) as i64;
+
         format!(
-            "Expect complete: {}\n",
+            "Expect complete: {}\n{}",
             replace_all(&timestamp_to_string(
                 current_time + score.expect_finish_time(Some(timestamp)) as i64,
-            ))
+            )),
+            if current_time > expect {
+                "⚠️*Warning: The contract will be completed beyond the estimated time*\n"
+            } else {
+                ""
+            }
         )
     } else {
         "".into()
@@ -1213,15 +1220,17 @@ async fn handle_callback_query(
 async fn handle_help(bot: BotType, msg: Message) -> anyhow::Result<()> {
     bot.send_message(msg.chat.id, "Usage:\n\
     /add `\\<EI\\>` Add your account to this bot\\.\n\
-    /list `[ei]` List all EI belong your telegram account\\.\n\
+    /list `\\[ei\\]` List all EI belong your telegram account\\.\n\
     /missions Display recent 6 rocket missions\\.\n\
     /recent Display recent 1 hour land missions\\.\n\
     /remove `\\<EI\\>` Remove your account from this bot\\.\n\n\
     Contract rated:\n\
     `/contract list` List your recent contracts, only available when contract tracker enabled\\.\n\
     `/contract calc \\<EI\\> \\<contract\\-id\\>` Calculate user's contract score\\.\n\
-    `/contract room \\<contract\\-id\\> \\<room\\-id\\>` Calculate contract score by specify room ID\\.\n\
-    `/contract enable\\|disable <EI>` Enable / Disable contract tracker \\(After add to bot\\)\\.
+    `/contract room \\<contract\\-id\\> \\<room\\-id\\> \\[detail\\]` Calculate contract score by specify room ID\\.\n\
+    `/contract enable\\|disable <EI>` Enable / Disable contract tracker \\(After add to bot\\)\\.\n\n\
+    Note:\n\
+    `\\[\\]` means optional string\\.
     ").await?;
     Ok(())
 }
