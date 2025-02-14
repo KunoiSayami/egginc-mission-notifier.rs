@@ -16,8 +16,8 @@ use teloxide::{
     payloads::{EditMessageTextSetters, SendMessageSetters},
     prelude::{Dispatcher, Requester as _, RequesterExt as _},
     types::{
-        CallbackQuery, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId,
-        ParseMode, Update,
+        CallbackQuery, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions,
+        Message, MessageId, ParseMode, Update,
     },
     utils::command::BotCommands,
     Bot,
@@ -49,6 +49,16 @@ static SPACE_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"[
 
 pub fn replace_all(s: &str) -> std::borrow::Cow<'_, str> {
     TELEGRAM_ESCAPE_RE.replace_all(s, "\\$1")
+}
+
+fn link_preview_options(enable: bool) -> LinkPreviewOptions {
+    LinkPreviewOptions {
+        is_disabled: !enable,
+        prefer_large_media: false,
+        prefer_small_media: false,
+        url: None,
+        show_above_text: false,
+    }
 }
 
 mod admin {
@@ -604,7 +614,14 @@ pub async fn bot_run(
                                     .await
                             }
                             Command::Help => handle_help(bot, msg).await,
-                            Command::Start { args: _ } => Ok(()),
+                            Command::Start { args: _ } => {
+                                bot.send_message(
+                                    msg.chat.id,
+                                    "Welcome, use /help to show more information\\.",
+                                )
+                                .await?;
+                                Ok(())
+                            }
                         }
                     }
                 },
@@ -973,10 +990,12 @@ async fn handle_calc_score(
         Ok(res) => {
             if inline {
                 bot.edit_message_text(chat_id, message_id, res)
+                    .link_preview_options(link_preview_options(false))
                     .reply_markup(event.keyboard(*detail))
                     .await
             } else {
                 bot.send_message(chat_id, res)
+                    .link_preview_options(link_preview_options(false))
                     .reply_markup(event.keyboard(*detail))
                     .await
             }
@@ -1084,7 +1103,7 @@ async fn process_calc(
                 current_time + score.expect_finish_time(Some(timestamp)) as i64,
             )),
             if current_time > expect {
-                "⚠️*Warning: The contract will be completed beyond the estimated time*\n"
+                "⚠️*Warning: The contract will be completed beyond the estimated time\\.*\n"
             } else {
                 ""
             }
@@ -1104,7 +1123,7 @@ async fn process_calc(
         .join("\n");
 
     let result = format!(
-        "*\\({grade}\\)* `{contract}` \\[`{room}`\\] {current_status}\n\
+        "[*\\({grade}\\)*](https://eicoop-carpet.netlify.app/{contract}/{room}) `{contract}` \\[`{room}`\\] {current_status}\n\
         Target: {amount}/{target} ELR: _{elr}_ Buff: _{buff}_\n\
         Contract timestamp: _{completion_time}_ / _{remain}_ remain\n\
         {sub_title}\n{users}\n\n\
@@ -1230,7 +1249,7 @@ async fn handle_help(bot: BotType, msg: Message) -> anyhow::Result<()> {
     `/contract room \\<contract\\-id\\> \\<room\\-id\\> \\[detail\\]` Calculate contract score by specify room ID\\.\n\
     `/contract enable\\|disable <EI>` Enable / Disable contract tracker \\(After add to bot\\)\\.\n\n\
     Note:\n\
-    `\\[\\]` means optional string\\.
+    `\\[\\.\\.\\.\\]` means optional string\\.
     ").await?;
     Ok(())
 }
