@@ -170,8 +170,11 @@ pub async fn request(
         .map_err(|e| QueryError::System(e))?
         .error_for_status()
         .map_err(|e| QueryError::User(e))?;
-    let data = decode_data(&resp.text().await.map_err(|e| QueryError::User(e))?, false)
-        .map_err(|e| QueryError::Other(e))?;
+    let data = decode_data(
+        &resp.text().await.map_err(|e| QueryError::System(e))?,
+        false,
+    )
+    .map_err(|e| QueryError::Other(e))?;
     Ok(data)
 }
 
