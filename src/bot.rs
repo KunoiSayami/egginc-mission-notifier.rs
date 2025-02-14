@@ -46,6 +46,12 @@ pub static COOP_ID_RE: LazyLock<regex::Regex> =
 pub static ROOM_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[\w\d][\-\w\d]*$").unwrap());
 static SPACE_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"[ \t]+").unwrap());
+static CONTRACT_WEBSITE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"^https://eicoop-carpet.netlify.app/([\w\d][\-\w\d]*)/([\w\d][\-\w\d]*)(\?d)?$",
+    )
+    .unwrap()
+});
 
 pub fn replace_all(s: &str) -> std::borrow::Cow<'_, str> {
     TELEGRAM_ESCAPE_RE.replace_all(s, "\\$1")
@@ -452,6 +458,14 @@ impl ContractCommand {
         }
     }
 
+    fn new_room(contract_id: &str, room: &str, detail: bool) -> Self {
+        Self::CalcRoom {
+            id: contract_id.into(),
+            room: room.into(),
+            detail,
+        }
+    }
+
     fn keyboard(&self, detail: bool) -> InlineKeyboardMarkup {
         let detail = if detail { " detail" } else { "" };
         InlineKeyboardMarkup::new(match &self {
@@ -579,7 +593,7 @@ pub async fn bot_run(
         config.telegram().username().to_string(),
     ));
 
-    let handle_message = Update::filter_message().branch(
+    let handle_command_message = Update::filter_message().branch(
         dptree::entry()
             .filter(|msg: Message| msg.chat.is_private())
             .filter_command::<Command>()
@@ -628,6 +642,41 @@ pub async fn bot_run(
             ),
     );
 
+    let handle_message = Update::filter_message()
+        .filter(|msg: Message| msg.chat.is_private())
+        .endpoint(
+            |msg: Message, bot: BotType, arg: Arc<NecessaryArg>| async move {
+                let Some(text) = msg.text() else {
+                    return Ok(());
+                };
+
+                if let Some(group) = CONTRACT_WEBSITE_RE.captures(text) {
+                    let event = ContractCommand::new_room(
+                        group.get(1).unwrap().as_str(),
+                        group.get(2).unwrap().as_str(),
+                        group.get(3).is_some(),
+                    );
+                    return handle_calc_score(bot, arg, msg.chat.id, msg.id, &event, false).await;
+                }
+
+                let groups = text.split_whitespace().collect_vec();
+
+                if groups.len() >= 2 {
+                    let first = groups[0];
+                    let second = groups[1];
+                    let detail = groups.get(2).map(|x| x.eq(&"d")).unwrap_or_default();
+
+                    if COOP_ID_RE.is_match(first) && ROOM_RE.is_match(second) {
+                        let event = ContractCommand::new_room(first, second, detail);
+                        return handle_calc_score(bot, arg, msg.chat.id, msg.id, &event, false)
+                            .await;
+                    }
+                }
+
+                Ok(())
+            },
+        );
+
     let handle_callback_query = Update::filter_callback_query()
         .filter(|q: CallbackQuery| q.data.is_some())
         .endpoint(
@@ -639,6 +688,7 @@ pub async fn bot_run(
     let dispatcher = Dispatcher::builder(
         bot,
         dptree::entry()
+            .branch(handle_command_message)
             .branch(handle_message)
             .branch(handle_callback_query),
     )
@@ -1123,7 +1173,7 @@ async fn process_calc(
         .join("\n");
 
     let result = format!(
-        "[*\\({grade}\\)*](https://eicoop-carpet.netlify.app/{contract}/{room}) `{contract}` \\[`{room}`\\] {current_status}\n\
+        "[*\\({grade}\\)*](https://eicoop-carpet.netlify.app/{contract_id}/{room}) `{contract}` \\[`{room_id}`\\] {current_status}\n\
         Target: {amount}/{target} ELR: _{elr}_ Buff: _{buff}_\n\
         Contract timestamp: _{completion_time}_ / _{remain}_ remain\n\
         {sub_title}\n{users}\n\n\
@@ -1131,7 +1181,7 @@ async fn process_calc(
         {msg_update}\
         {footer}",
         contract = replace_all(contract_id),
-        room = replace_all(&room),
+        room_id = replace_all(&room),
         grade = score.grade_str(),
         current_status = score.emoji(),
         elr = replace_all(&score.total_known_elr()),
