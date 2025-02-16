@@ -353,7 +353,14 @@ async fn process_calc(
         _ => unreachable!(),
     };
 
-    let score = decode_and_calc_score(contract_spec, &body, false)?;
+    let Some(score) = decode_and_calc_score(contract_spec, &body, false)? else {
+        return Ok(format!("`{contract}` \\[`{room_id}`\\]\n\
+        \n\
+        This contract will not be completed before it expires\\. Check [web](https://eicoop-carpet.netlify.app/{contract_id}/{room}) for more information\\.",
+        contract = replace_all(contract_id),
+        room_id = replace_all(&room),
+    ));
+    };
 
     let sub_title = if !score.is_finished() {
         let expect = current_time + score.expect_finish_time(Some(timestamp)) as i64;

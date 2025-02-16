@@ -140,7 +140,7 @@ pub fn decode_and_calc_score(
     spec: ContractSpec,
     data: &[u8],
     authorized: bool,
-) -> anyhow::Result<CoopScore> {
+) -> anyhow::Result<Option<CoopScore>> {
     let res: proto::ContractCoopStatusResponse = decode_data(data, authorized)?;
     /* let mut output = vec![];
 
@@ -356,6 +356,11 @@ mod types {
         }
     }
 
+    enum CoopStatus {
+        Normal(f64, f64, f64, Vec<UserScore>),
+        OutOfTime,
+    }
+
     #[derive(Clone)]
     pub struct CoopScore {
         spec: ContractGradeSpec,
@@ -373,7 +378,7 @@ mod types {
         pub fn calc(
             data: super::proto::ContractCoopStatusResponse,
             spec: &ContractSpec,
-        ) -> Result<Self, &'static str> {
+        ) -> Result<Option<Self>, &'static str> {
             let Some(grade_spec) = spec.get(&data.grade()) else {
                 return Err("Grade spec not found");
             };
@@ -387,10 +392,13 @@ mod types {
                 replace_all(&parse_num_with_unit(grade_spec.goal3())),
             )); */
 
-            let (completion_time, expect_remain_time, _remain_time, players) =
-                Self::calc_total_score(&data, grade_spec, spec.max_coop_size(), spec.token_time());
+            let CoopStatus::Normal(completion_time, expect_remain_time, _remain_time, players) =
+                Self::calc_total_score(&data, grade_spec, spec)
+            else {
+                return Ok(None);
+            };
 
-            Ok(Self {
+            Ok(Some(Self {
                 //token_time: spec.token_time(),
                 spec: *grade_spec,
                 expect_remain_time,
@@ -400,15 +408,14 @@ mod types {
                 current_amount: data.total_amount(),
                 contract_remain_time: data.seconds_remaining(),
                 member: players,
-            })
+            }))
         }
 
         fn calc_total_score(
             coop: &super::proto::ContractCoopStatusResponse,
             grade_spec: &ContractGradeSpec,
-            coop_size: i64,
-            token_time: f64,
-        ) -> (f64, f64, f64, Vec<UserScore>) {
+            spec: &ContractSpec,
+        ) -> CoopStatus {
             /* let pu = crate::egg::functions::parse_num_with_unit;
             let s2h = |value: f64| value * 3600.0; */
 
@@ -445,6 +452,10 @@ mod types {
                 let total_elr = if total_elr == 0.0 { 0.001 } else { total_elr };
                 //log::trace!("{} {} {total_elr}", pu(remain), pu(offline_egg));
                 let expect_remain_time = (remain - offline_egg) / total_elr;
+
+                if expect_remain_time > coop_total_time {
+                    return CoopStatus::OutOfTime;
+                }
 
                 /* let completion_time =
                 coop_total_time - coop.seconds_remaining() + expect_remain_time; */
@@ -493,9 +504,7 @@ mod types {
                     big_g,
                     grade_spec,
                     grade_spec.goal3().max(coop.total_amount()),
-                    coop_size as f64,
-                    token_time,
-                    coop_total_time,
+                    spec,
                     completion_time - expect_remain_time.min(0.0),
                     expect_remain_time.max(0.0),
                     calc_timestamp(user_timestamp.unwrap_or_default()),
@@ -539,7 +548,7 @@ mod types {
                 "{completion_time} {} {expect_remain_time} {remain_time}",
                 completion_time - expect_remain_time.min(0.0)
             ); */
-            (completion_time, expect_remain_time, remain_time, players)
+            CoopStatus::Normal(completion_time, expect_remain_time, remain_time, players)
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -550,13 +559,15 @@ mod types {
             big_g: f64,
             grade_spec: &ContractGradeSpec,
             total_delivered: f64,
-            coop_size: f64,
-            token_time: f64,
-            coop_total_time: f64,
+            spec: &ContractSpec,
             completion_time: f64,
             expect_remain_time: f64,
             user_offline_time: f64,
         ) -> f64 {
+            let coop_total_time = grade_spec.length();
+            let coop_size = spec.max_coop_size() as f64;
+            let token_time = spec.token_time();
+
             let user_total_delivered =
                 contributions + total_elr.unwrap_or(0.0) * (expect_remain_time + user_offline_time);
             let ratio = (user_total_delivered * coop_size)
