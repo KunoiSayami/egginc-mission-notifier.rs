@@ -1,11 +1,7 @@
 use base64::Engine;
 use chrono::TimeDelta;
 use itertools::Itertools as _;
-use reqwest::ClientBuilder;
-use std::{
-    sync::{Arc, LazyLock},
-    time::Duration,
-};
+use std::sync::{Arc, LazyLock};
 
 use teloxide::{
     payloads::{EditMessageTextSetters, SendMessageSetters},
@@ -18,6 +14,7 @@ use anyhow::anyhow;
 use crate::{
     bot::replace_all,
     egg::{decode_and_calc_score, encode_to_byte, query_coop_status},
+    functions::build_reqwest_client,
     types::{fmt_time_delta_short, return_tf_emoji, timestamp_to_string, BASE64},
 };
 
@@ -329,10 +326,7 @@ async fn process_calc(
                     (cache.timestamp(), cache.room().to_string(), cache.extract())
                 }
                 _ => {
-                    let client = ClientBuilder::new()
-                        .timeout(Duration::from_secs(10))
-                        .build()
-                        .unwrap();
+                    let client = build_reqwest_client();
                     let raw = query_coop_status(&client, contract_id, room, None).await?;
 
                     let bytes = encode_to_byte(&raw);
@@ -356,9 +350,11 @@ async fn process_calc(
     let Some(score) = decode_and_calc_score(contract_spec, &body, false)? else {
         return Ok(format!("`{contract}` \\[`{room_id}`\\]\n\
         \n\
-        This contract will not be completed before it expires\\. Check [web](https://eicoop-carpet.netlify.app/{contract_id}/{room}) for more information\\.",
+        This contract will not be completed before it expires\\. Check [web](https://eicoop-carpet.netlify.app/{contract_id}/{room}) for more information\\.\n\
+        Last refresh: {timestamp}",
         contract = replace_all(contract_id),
         room_id = replace_all(&room),
+        timestamp = replace_all(&timestamp_to_string(current_time)),
     ));
     };
 

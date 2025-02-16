@@ -14,6 +14,7 @@ use tokio::{task::JoinHandle, time::interval};
 
 use crate::bot::replace_all;
 use crate::egg::functions::parse_num_with_unit;
+use crate::functions::build_reqwest_client;
 use crate::types::{
     convert_set, fmt_time_delta_short, timestamp_to_string, AccountMap, ContractSpec, QueryError,
     SpaceShip,
@@ -284,12 +285,7 @@ impl Monitor {
         //log_output.clear();
         let mut log_output = vec![];
 
-        let contracts = &info
-            .backup
-            .as_ref()?
-            .contracts
-            .as_ref()?
-            .current_coop_statuses;
+        let contracts = &backup.contracts.as_ref()?.current_coop_statuses;
 
         for contract in contracts {
             let amount = contract.total_amount();
@@ -477,7 +473,7 @@ impl Monitor {
         let current_time = kstool::time::get_current_second();
         LAST_QUERY.store(current_time, std::sync::atomic::Ordering::Relaxed);
 
-        let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
+        let client = build_reqwest_client();
 
         for account in database
             .account_query(None)

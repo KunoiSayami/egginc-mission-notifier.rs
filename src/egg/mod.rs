@@ -7,4 +7,6 @@ pub mod proto;
 pub mod types;
 
 pub use coop::{decode_and_calc_score, decode_coop_status, query_coop_status};
-pub(crate) use functions::{encode_to_byte, is_contract_cleared, request as ei_request};
+pub(crate) use functions::{
+    encode_to_byte, extract_contracts, is_contract_cleared, request as ei_request,
+};

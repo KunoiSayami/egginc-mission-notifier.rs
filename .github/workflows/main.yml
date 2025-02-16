@@ -34,6 +34,7 @@ jobs:
       - name: Environment
         run: |
           git submodule update --init --recursive
+          sudo apt install -y protobuf-compiler
       - name: Update rust
         run: rustup update
 
@@ -76,6 +77,7 @@ jobs:
       - name: Environment
         run: |
           git submodule update --init --recursive
+          sudo apt install -y protobuf-compiler
       - name: Update rust
         run: rustup target install aarch64-unknown-linux-musl
       - name: Install cross

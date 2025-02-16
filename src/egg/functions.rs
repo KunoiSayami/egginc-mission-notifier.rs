@@ -9,6 +9,8 @@ use crate::types::QueryError;
 
 use super::definitions::*;
 use super::proto;
+use super::proto::EggIncFirstContactResponse;
+use super::proto::MyContracts;
 //use super::proto::contract::GradeSpec;
 use super::types::SpaceShipInfo;
 
@@ -197,4 +199,8 @@ pub(crate) fn is_contract_cleared(raw: &[u8]) -> bool {
     };
 
     data.cleared_for_exit()
+}
+
+pub(crate) fn extract_contracts(resp: &EggIncFirstContactResponse) -> Option<&MyContracts> {
+    resp.backup.as_ref()?.contracts.as_ref()
 }

@@ -1,7 +1,6 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use itertools::Itertools as _;
-use reqwest::ClientBuilder;
 use teloxide::{
     prelude::Requester,
     types::{InputFile, Message},
@@ -11,6 +10,7 @@ use anyhow::anyhow;
 
 use crate::{
     egg::{decode_coop_status, ei_request, query_coop_status},
+    functions::build_reqwest_client,
     types::timestamp_fmt,
 };
 
@@ -176,13 +176,6 @@ async fn handle_admin_sub_command<'a>(
     msg: &Message,
     command: AdminCommand<'a>,
 ) -> anyhow::Result<()> {
-    let build_client = || {
-        ClientBuilder::new()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .unwrap()
-    };
-
     match command {
         AdminCommand::Query { ei } => {
             if let Some(ei) = ei {
@@ -248,10 +241,7 @@ async fn handle_admin_sub_command<'a>(
                     .flatten()
                     .and_then(|x| decode_coop_status(&x.extract(), false).ok())
             } else {
-                let client = ClientBuilder::new()
-                    .timeout(Duration::from_secs(10))
-                    .build()
-                    .unwrap();
+                let client = build_reqwest_client();
                 let raw = query_coop_status(&client, id, room, ei.map(|x| x.to_string()))
                     .await
                     .inspect_err(|e| log::error!("Query remote error: {e:?}"))
@@ -286,7 +276,7 @@ async fn handle_admin_sub_command<'a>(
             }
         }
         AdminCommand::UserStatusSave { ei } => {
-            let client = build_client();
+            let client = build_reqwest_client();
             match ei_request(&client, ei).await {
                 Ok(resp) => {
                     let s = format!("{resp:#?}");

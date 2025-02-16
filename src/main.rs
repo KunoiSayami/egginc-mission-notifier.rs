@@ -2,15 +2,17 @@ mod bot;
 mod config;
 mod database;
 mod egg;
+mod functions;
 mod types;
 
 use std::sync::OnceLock;
 
 use bot::{bot, bot_run};
-use clap::arg;
+use clap::{arg, ArgMatches};
 use config::Config;
 use database::DatabaseHandle;
 use egg::monitor::Monitor;
+use functions::download_contract;
 
 static FETCH_PERIOD: OnceLock<i64> = OnceLock::new();
 static CHECK_PERIOD: OnceLock<i64> = OnceLock::new();
@@ -56,6 +58,15 @@ fn enable_log(verbose: u8) {
     builder.init();
 }
 
+async fn async_route(matches: ArgMatches) -> anyhow::Result<()> {
+    match matches.subcommand() {
+        Some(("past-contract-spec", matches)) => {
+            download_contract(matches.get_one::<String>("EI").unwrap()).await
+        }
+        _ => async_main(matches.get_one::<String>("CONFIG").unwrap()).await,
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let matches = clap::command!()
         .args(&[
@@ -69,6 +80,7 @@ fn main() -> anyhow::Result<()> {
                 .value_parser(clap::value_parser!(i64)),
             arg!(-v --verbose ... "More verbose log output"),
         ])
+        .subcommand(clap::Command::new("past-contract-spec").args(&[arg!(<EI> "EI, your game id")]))
         .get_matches();
 
     enable_log(matches.get_count("verbose"));
@@ -90,5 +102,5 @@ fn main() -> anyhow::Result<()> {
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async_main(matches.get_one::<String>("CONFIG").unwrap()))
+        .block_on(async_route(matches))
 }
