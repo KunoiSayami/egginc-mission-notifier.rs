@@ -39,7 +39,7 @@ jobs:
 
       - name: Build binary
         run: |
-          cargo build --profile release --features all
+          cargo build --profile release
       - name: Rename binary
         id: rename
         shell: bash
@@ -82,7 +82,7 @@ jobs:
         run: cargo install cross
       - name: Build binary
         run: |
-          cross build --target aarch64-unknown-linux-musl --profile release --features all
+          cross build --target aarch64-unknown-linux-musl --profile release
       - run: mv target/aarch64-unknown-linux-musl/release/egg-mission-notifier target/aarch64-unknown-linux-musl/release/egg-mission-notifier_linux_aarch64
       - uses: actions/upload-artifact@v4.3.3
         with:
