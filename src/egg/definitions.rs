@@ -11,12 +11,12 @@ pub(super) const DEFAULT_USER: &[u8] = &[
     69, 73, 54, 50, 57, 49, 57, 52, 48, 57, 54, 56, 50, 51, 53, 48, 48, 56,
 ];
 
-pub(super) const UNIT: &[&str] = &[
+pub(super) const OOM_UNIT: &[&str] = &[
     "", "K", "M", "B", "T", "q", "Q", "s", "S", "o", "N", "d", "U", "D", "Td", "qd", "Qd", "sd",
     "Sd", "Od", "Nd", "V", "uV", "dV", "tV", "qV", "QV", "sV", "SV", "OV", "NV", "tT",
 ];
 
-pub(super) const DEFAULT_EARNING_BONUS_ROLE: &str = "Infini";
+pub(super) const DEFAULT_OOM_UNIT: &str = "A Lot";
 
 pub(super) const EARNING_BONUS_ROLE: &[&str] = &[
     "Farmer",
@@ -72,7 +72,7 @@ pub(super) const EARNING_BONUS_ROLE: &[&str] = &[
     "Exeda III",
 ];
 
-pub(super) const DEFAULT_UNIT: &str = "A Lot";
+pub(super) const DEFAULT_EARNING_BONUS_ROLE: &str = "Infini";
 
 pub(super) const API_BACKEND: &str = determine_api();
 

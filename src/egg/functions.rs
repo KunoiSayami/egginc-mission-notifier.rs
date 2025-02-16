@@ -17,11 +17,11 @@ pub(crate) fn parse_num_with_unit(mut num: f64) -> String {
     while num > 1000.0 {
         num /= 1000.0;
         count += 1;
-        if count > UNIT.len() {
+        if count > OOM_UNIT.len() {
             break;
         }
     }
-    let unit = UNIT.get(count).unwrap_or(&DEFAULT_UNIT);
+    let unit = OOM_UNIT.get(count).unwrap_or(&DEFAULT_OOM_UNIT);
     format!("{num:.2}{}", unit)
 }
 

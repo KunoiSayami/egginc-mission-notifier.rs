@@ -9,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    definitions::{API_BACKEND, UNIT},
+    definitions::{API_BACKEND, OOM_UNIT},
     functions::decode_data,
     proto::{self},
 };
@@ -27,7 +27,7 @@ fn parse_num_str(s: &str) -> Option<f64> {
         return Some(basic);
     };
     let base = 1000.0f64;
-    for (index, u) in UNIT.iter().enumerate() {
+    for (index, u) in OOM_UNIT.iter().enumerate() {
         if u.eq(&unit.as_str()) {
             return Some(basic * base.powi(index as i32));
         }
@@ -272,7 +272,11 @@ mod types {
         }
 
         pub fn finalized(&self) -> &'static str {
-            self.finalized.then_some(" ✅").unwrap_or_default()
+            if self.finalized {
+                " ✅"
+            } else {
+                ""
+            }
         }
 
         pub fn timestamp(&self, cache_timestamp: Option<i64>) -> Option<f64> {
