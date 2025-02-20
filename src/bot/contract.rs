@@ -58,19 +58,20 @@ impl ContractCommand {
 
         if let Some((second, third)) = second.split_once(' ') {
             let (third, forth) = third.split_once(' ').unwrap_or((third, ""));
+            let require_detail = forth.eq("detail") || forth.eq("d");
             match first {
                 "calc" if EI_CHECKER_RE.is_match(second) && ROOM_RE.is_match(third) => {
                     Some(Self::Calc {
                         ei: second.into(),
                         id: third.into(),
-                        detail: forth.eq("detail"),
+                        detail: require_detail,
                     })
                 }
                 "room" if COOP_ID_RE.is_match(second) && ROOM_RE.is_match(third) => {
                     Some(Self::CalcRoom {
                         id: second.into(),
                         room: third.into(),
-                        detail: forth.eq("detail"),
+                        detail: require_detail,
                     })
                 }
                 _ => None,
@@ -102,26 +103,20 @@ impl ContractCommand {
     }
 
     fn keyboard(&self, detail: bool) -> InlineKeyboardMarkup {
-        let detail = if detail { " detail" } else { "" };
+        let detail = if detail { " d" } else { "" };
         InlineKeyboardMarkup::new(match &self {
             ContractCommand::Calc { ei, id, .. } => [[
-                InlineKeyboardButton::callback(
-                    "Refresh",
-                    format!("contract calc {ei} {id}{detail}"),
-                ),
+                InlineKeyboardButton::callback("Refresh", format!("c calc {ei} {id}{detail}")),
                 InlineKeyboardButton::callback(
                     "Refresh inline",
-                    format!("contract-i calc {ei} {id}{detail}"),
+                    format!("c-i calc {ei} {id}{detail}"),
                 ),
             ]],
             ContractCommand::CalcRoom { id, room, .. } => [[
-                InlineKeyboardButton::callback(
-                    "Refresh",
-                    format!("contract room {id} {room}{detail}"),
-                ),
+                InlineKeyboardButton::callback("Refresh", format!("c room {id} {room}{detail}")),
                 InlineKeyboardButton::callback(
                     "Refresh inline",
-                    format!("contract-i room {id} {room}{detail}"),
+                    format!("c-i room {id} {room}{detail}"),
                 ),
             ]],
             _ => unreachable!(),
@@ -467,19 +462,20 @@ pub(super) async fn handle_callback_query(
     };
 
     match first {
-        "contract" | "contract-i" => {
+        "contract" | "contract-i" | "c" | "c-i" => {
             if let Some(msg) = second
                 .contains(' ')
                 .then_some(msg.message.as_ref())
                 .flatten()
             {
+                let inline = first.ends_with("-i");
                 route_contract_command(
                     bot.clone(),
                     arg,
                     msg.chat().id,
                     msg.id(),
                     second.to_string(),
-                    first.eq("contract-i"),
+                    inline,
                 )
                 .await?;
                 /* if let Ok(result) =
@@ -488,7 +484,7 @@ pub(super) async fn handle_callback_query(
                     bot.edit_message_text(msg.chat().id, msg.id(), result)
                         .await?;
                 }; */
-                if !first.ends_with("-i") {
+                if !inline {
                     bot.edit_message_reply_markup(msg.chat().id, msg.id())
                         .await?;
                 }

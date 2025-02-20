@@ -47,7 +47,7 @@ impl Command {
             .and_then(|x| String::from_utf8(x).ok())?;
         let (first, second) = content.split_once(' ')?;
         match first {
-            "contract" => Some(Self::Contract { cmd: second.into() }),
+            "contract" | "c" => Some(Self::Contract { cmd: second.into() }),
             _ => None,
         }
     }
