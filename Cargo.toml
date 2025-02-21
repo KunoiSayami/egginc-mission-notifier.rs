@@ -1,7 +1,7 @@
 [package]
 name = "egginc-mission-notifier"
 version = "2.5.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 anyhow = "1"
@@ -17,7 +17,7 @@ itertools = "0.14"
 kstool = "0.2"
 kstool-helper-generator = "0.4"
 log = "0.4"
-minicbor-serde = { version = "0.3.2", features = ["alloc"] }
+minicbor-serde = { version = "0.4.0", features = ["alloc"] }
 prost = "0.13"
 rand = "0.9"
 regex = "1"

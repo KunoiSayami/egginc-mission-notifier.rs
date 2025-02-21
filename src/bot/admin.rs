@@ -15,9 +15,9 @@ use crate::{
 };
 
 use super::{
+    BotType, EI_CHECKER_RE,
     arg::NecessaryArg,
     contract::{COOP_ID_RE, ROOM_RE},
-    BotType, EI_CHECKER_RE,
 };
 
 //#[derive(Clone, Copy, Debug)]
@@ -170,11 +170,11 @@ impl<'a> TryFrom<&'a str> for AdminCommand<'a> {
     }
 }
 
-async fn handle_admin_sub_command<'a>(
+async fn handle_admin_sub_command(
     bot: &BotType,
     arg: &Arc<NecessaryArg>,
     msg: &Message,
-    command: AdminCommand<'a>,
+    command: AdminCommand<'_>,
 ) -> anyhow::Result<()> {
     match command {
         AdminCommand::Query { ei } => {
@@ -242,11 +242,10 @@ async fn handle_admin_sub_command<'a>(
                     .and_then(|x| decode_coop_status(&x.extract(), false).ok())
             } else {
                 let client = build_reqwest_client();
-                let raw = query_coop_status(&client, id, room, ei.map(|x| x.to_string()))
+                query_coop_status(&client, id, room, ei.map(|x| x.to_string()))
                     .await
                     .inspect_err(|e| log::error!("Query remote error: {e:?}"))
-                    .ok();
-                raw
+                    .ok()
             };
             match ret {
                 Some(resp) => {

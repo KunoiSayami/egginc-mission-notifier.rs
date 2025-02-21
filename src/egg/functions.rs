@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Cursor};
 
 use anyhow::anyhow;
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use flate2::bufread::ZlibDecoder;
 use reqwest::Client;
 
@@ -169,14 +169,11 @@ pub async fn request(
         .form(&form)
         .send()
         .await
-        .map_err(|e| QueryError::System(e))?
+        .map_err(QueryError::System)?
         .error_for_status()
-        .map_err(|e| QueryError::User(e))?;
-    let data = decode_data(
-        &resp.text().await.map_err(|e| QueryError::System(e))?,
-        false,
-    )
-    .map_err(|e| QueryError::Other(e))?;
+        .map_err(QueryError::User)?;
+    let data = decode_data(&resp.text().await.map_err(QueryError::System)?, false)
+        .map_err(QueryError::Other)?;
     Ok(data)
 }
 

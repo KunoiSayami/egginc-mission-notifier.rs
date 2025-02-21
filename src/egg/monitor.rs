@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
-use std::sync::atomic::AtomicU64;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicU64;
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::anyhow;
@@ -12,17 +12,17 @@ use tap::TapOptional as _;
 use teloxide::prelude::Requester;
 use tokio::{task::JoinHandle, time::interval};
 
+use crate::CACHE_REQUEST_OFFSET;
 use crate::bot::replace_all;
 use crate::egg::functions::parse_num_with_unit;
 use crate::functions::build_reqwest_client;
 use crate::types::{
-    convert_set, fmt_time_delta_short, timestamp_to_string, AccountMap, ContractSpec, QueryError,
-    SpaceShip,
+    AccountMap, ContractSpec, QueryError, SpaceShip, convert_set, fmt_time_delta_short,
+    timestamp_to_string,
 };
-use crate::CACHE_REQUEST_OFFSET;
 use crate::{
-    bot::BotType, database::DatabaseHelper, types::Account, CACHE_REFRESH_PERIOD, CHECK_PERIOD,
-    FETCH_PERIOD,
+    CACHE_REFRESH_PERIOD, CHECK_PERIOD, FETCH_PERIOD, bot::BotType, database::DatabaseHelper,
+    types::Account,
 };
 
 use super::functions::{decode_data, get_missions, request};
@@ -459,7 +459,7 @@ impl Monitor {
                 ),
             )
             .await
-            .map_err(|e| anyhow::Error::from(e))?;
+            .map_err(anyhow::Error::from)?;
         }
 
         Ok(true)
@@ -563,7 +563,9 @@ impl Monitor {
             break;
         }
         let Some(board) = board else {
-            log::warn!("Board not found but cache is not empty, return default. Board: {current_time}, BtreeMap: {cache:?}");
+            log::warn!(
+                "Board not found but cache is not empty, return default. Board: {current_time}, BtreeMap: {cache:?}"
+            );
             return vec![];
         };
         let tmp = cache.split_off(&board);

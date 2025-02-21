@@ -1,27 +1,27 @@
 use std::sync::Arc;
 
-use super::{admin::handle_admin_command, replace_all, BotType};
+use super::{BotType, admin::handle_admin_command, replace_all};
 use base64::Engine;
 use itertools::Itertools;
 use teloxide::{
+    Bot,
     dispatching::{HandlerExt as _, UpdateFilterExt as _},
     dptree,
     prelude::{Dispatcher, Requester as _, RequesterExt as _},
     types::{CallbackQuery, ChatId, Message, ParseMode, Update},
     utils::command::BotCommands,
-    Bot,
 };
 
 use crate::{
+    CHECK_PERIOD, FETCH_PERIOD,
     bot::arg::NecessaryArg,
     config::Config,
     database::DatabaseHelper,
-    egg::monitor::{MonitorHelper, LAST_QUERY},
-    types::{timestamp_to_string, BASE64},
-    CHECK_PERIOD, FETCH_PERIOD,
+    egg::monitor::{LAST_QUERY, MonitorHelper},
+    types::{BASE64, timestamp_to_string},
 };
 
-use super::contract::{prelude::*, ContractCommand, CONTRACT_WEBSITE_RE, COOP_ID_RE, ROOM_RE};
+use super::contract::{CONTRACT_WEBSITE_RE, COOP_ID_RE, ContractCommand, ROOM_RE, prelude::*};
 use super::missions::prelude::*;
 
 #[derive(BotCommands, Clone)]
@@ -53,7 +53,7 @@ impl Command {
     }
 
     fn decode(s: String) -> Self {
-        Self::decode_inner(s.clone()).unwrap_or_else(|| Self::Start { args: s })
+        Self::decode_inner(s.clone()).unwrap_or(Self::Start { args: s })
     }
 }
 

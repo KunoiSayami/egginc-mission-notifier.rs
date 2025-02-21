@@ -18,6 +18,7 @@ pub(crate) async fn download_contract(ei: &str) -> anyhow::Result<()> {
     let write_file = |filename| async move {
         tokio::fs::OpenOptions::new()
             .create(true)
+            .truncate(true)
             .write(true)
             .open(filename)
             .await
