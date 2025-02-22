@@ -127,7 +127,7 @@ jobs:
             ~/work/egginc-mission-notifier.rs/egginc-mission-notifier.rs/target
       - if: ${{ steps.cache-cargo.outputs.cache-hit != 'true' }}
         name: Update rust
-        run: rustup target install aarch64-unknown-linux-musl
+        run: rustup update && rustup target install aarch64-unknown-linux-musl
       - name: Install cross
         run: cargo install cross
       - name: Build binary
