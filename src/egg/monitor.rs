@@ -516,12 +516,13 @@ impl Monitor {
                     .ok_or_else(|| anyhow!("Unable query database account map"))?
                     .chat_ids()
                 {
+                    let nick = account.error_friendly_name();
                     bot.send_message(
                         user,
                         if is_user_error {
-                            format!("Remote query got error, disable `{}`", account.ei())
+                            format!("Remote query got error, disable `{nick}`")
                         } else {
-                            format!("Remote query got error, please check `{}`", account.ei())
+                            format!("Remote query got error, please check `{nick}`")
                         },
                     )
                     .await

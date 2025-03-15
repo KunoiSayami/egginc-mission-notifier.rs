@@ -11,3 +11,4 @@ target/
 *.data
 *.out
 src/DATA
+*.db

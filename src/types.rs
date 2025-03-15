@@ -9,7 +9,7 @@ use base64::Engine;
 use chrono::DateTime;
 use itertools::Itertools as _;
 use rand::distr::{Alphanumeric, SampleString as _};
-use sqlx::{prelude::FromRow, sqlite::SqliteRow, Row};
+use sqlx::{Row, prelude::FromRow, sqlite::SqliteRow};
 use teloxide::types::ChatId;
 
 use crate::{bot::replace_all, egg::types::ContractGradeSpec};
@@ -187,6 +187,15 @@ impl Account {
         self.nickname.as_ref()
     }
 
+    pub fn error_friendly_name(&self) -> String {
+        let suffix = if self.nickname().is_some() {
+            format!("[{}]", self.ei)
+        } else {
+            String::new()
+        };
+        format!("{}{suffix}", self.name())
+    }
+
     pub fn name(&self) -> &String {
         self.nickname().unwrap_or(&*DEFAULT_NICKNAME)
     }
@@ -315,11 +324,7 @@ impl Hash for SpaceShip {
 }
 
 pub fn return_tf_emoji(input: bool) -> &'static str {
-    if input {
-        "✅"
-    } else {
-        "❌"
-    }
+    if input { "✅" } else { "❌" }
 }
 
 pub fn convert_set(v: Vec<HashSet<SpaceShip>>) -> Vec<SpaceShip> {
