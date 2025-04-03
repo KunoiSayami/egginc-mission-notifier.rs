@@ -5,10 +5,11 @@ mod egg;
 mod functions;
 mod types;
 
+use std::io::Write as _;
 use std::sync::OnceLock;
 
 use bot::{bot, bot_run};
-use clap::{arg, ArgMatches};
+use clap::{ArgMatches, arg};
 use config::Config;
 use database::DatabaseHandle;
 use egg::monitor::Monitor;
@@ -40,7 +41,7 @@ async fn async_main(config_file: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn enable_log(verbose: u8) {
+fn enable_log(verbose: u8, is_systemd: bool) {
     let mut builder = env_logger::Builder::from_default_env();
     if verbose < 3 {
         builder
@@ -54,6 +55,9 @@ fn enable_log(verbose: u8) {
     }
     if verbose < 1 {
         builder.filter_module("sqlx", log::LevelFilter::Warn);
+    }
+    if is_systemd {
+        builder.format(|buf, record| writeln!(buf, "[{}] {}", record.level(), record.args()));
     }
     builder.init();
 }
@@ -79,11 +83,12 @@ fn main() -> anyhow::Result<()> {
                 .default_value("1800")
                 .value_parser(clap::value_parser!(i64)),
             arg!(-v --verbose ... "More verbose log output"),
+            arg!(--systemd "Disable timestamp output in log"),
         ])
         .subcommand(clap::Command::new("past-contract-spec").args(&[arg!(<EI> "EI, your game id")]))
         .get_matches();
 
-    enable_log(matches.get_count("verbose"));
+    enable_log(matches.get_count("verbose"), matches.get_flag("systemd"));
 
     FETCH_PERIOD
         .set(*matches.get_one::<i64>("fetch-period").unwrap())
