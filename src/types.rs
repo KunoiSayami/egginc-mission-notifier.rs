@@ -189,9 +189,9 @@ impl Account {
 
     pub fn error_friendly_name(&self) -> String {
         let suffix = if self.nickname().is_some() {
-            format!("[{}]", self.ei)
-        } else {
             String::new()
+        } else {
+            format!("[{}]", self.ei)
         };
         format!("{}{suffix}", self.name())
     }

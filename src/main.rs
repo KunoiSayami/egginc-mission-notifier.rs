@@ -19,12 +19,13 @@ static FETCH_PERIOD: OnceLock<i64> = OnceLock::new();
 static CHECK_PERIOD: OnceLock<i64> = OnceLock::new();
 const CACHE_REFRESH_PERIOD: u64 = 300;
 const CACHE_REQUEST_OFFSET: u64 = CACHE_REFRESH_PERIOD * 2;
+const DEFAULT_DATABASE_FILE: &str = "spaceship.db";
 
 //const STATIC_DATA: &[u8] = include_bytes!("../out1.data");
 
-async fn async_main(config_file: &str) -> anyhow::Result<()> {
+async fn async_main(config_file: &str, database: &str) -> anyhow::Result<()> {
     let config = Config::read(config_file).await?;
-    let (database_thread, database_helper) = DatabaseHandle::connect("spaceship.db").await?;
+    let (database_thread, database_helper) = DatabaseHandle::connect(database).await?;
 
     let bot = bot(&config)?;
 
@@ -67,7 +68,13 @@ async fn async_route(matches: ArgMatches) -> anyhow::Result<()> {
         Some(("past-contract-spec", matches)) => {
             download_contract(matches.get_one::<String>("EI").unwrap()).await
         }
-        _ => async_main(matches.get_one::<String>("CONFIG").unwrap()).await,
+        _ => {
+            async_main(
+                matches.get_one::<String>("CONFIG").unwrap(),
+                matches.get_one::<String>("database").unwrap(),
+            )
+            .await
+        }
     }
 }
 
@@ -75,6 +82,8 @@ fn main() -> anyhow::Result<()> {
     let matches = clap::command!()
         .args(&[
             arg!([CONFIG] "Configure file to read").default_value("config.toml"),
+            arg!(--database <database> "Specify database location")
+                .default_value(DEFAULT_DATABASE_FILE),
             arg!(--"check-period" <second> "Override check period")
                 .default_value("240")
                 .value_parser(clap::value_parser!(i64)),
