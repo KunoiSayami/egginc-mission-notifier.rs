@@ -17,8 +17,8 @@ itertools = "0.14"
 kstool = "0.2"
 kstool-helper-generator = "0.4"
 log = "0.4"
-minicbor-serde = { version = "0.4.0", features = ["alloc"] }
-prost = "0.13"
+minicbor-serde = { version = "0.5.0", features = ["alloc"] }
+prost = "0.14"
 rand = "0.9"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = [
@@ -28,7 +28,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 tap = "1"
-teloxide = { version = "0.15", default-features = false, features = [
+teloxide = { version = "0.16", default-features = false, features = [
     "rustls",
     "macros",
     "ctrlc_handler",
@@ -37,7 +37,7 @@ tokio = { version = "1", features = ["full"] }
 toml = "0.8"
 
 [build-dependencies]
-prost-build = "0.13"
+prost-build = "0.14"
 
 [package.metadata.cross.target.aarch64-unknown-linux-musl]
 #image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
