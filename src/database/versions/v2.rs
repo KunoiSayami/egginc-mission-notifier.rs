@@ -5,7 +5,7 @@ use itertools::Itertools as _;
 use log::info;
 use sqlx::SqliteConnection;
 
-use crate::types::Account;
+use crate::database::types::Account;
 
 const MERGE_STATEMENT_STAGE: &str = r#"
         CREATE TABLE "account" (

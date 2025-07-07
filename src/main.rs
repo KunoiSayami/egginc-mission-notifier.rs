@@ -15,6 +15,8 @@ use database::DatabaseHandle;
 use egg::monitor::Monitor;
 use functions::download_contract;
 
+use crate::egg::monitor::ContractSubscriber;
+
 static FETCH_PERIOD: OnceLock<i64> = OnceLock::new();
 static CHECK_PERIOD: OnceLock<i64> = OnceLock::new();
 const CACHE_REFRESH_PERIOD: u64 = 300;
@@ -30,13 +32,24 @@ async fn async_main(config_file: &str, database: &str) -> anyhow::Result<()> {
     let bot = bot(&config)?;
 
     let (monitor, monitor_helper) = Monitor::create(database_helper.clone(), bot.clone());
+    let (subscribe_monitor, subscribe_helper) =
+        ContractSubscriber::create(database_helper.clone(), bot.clone());
 
-    bot_run(bot, config, database_helper.clone(), monitor_helper.clone()).await?;
+    bot_run(
+        bot,
+        config,
+        database_helper.clone(),
+        monitor_helper.clone(),
+        subscribe_helper.clone(),
+    )
+    .await?;
 
     monitor_helper.exit().await;
+    subscribe_helper.exit().await;
     database_helper.terminate().await;
 
     monitor.join().await?;
+    subscribe_monitor.join().await?;
     database_thread.wait().await?;
 
     Ok(())

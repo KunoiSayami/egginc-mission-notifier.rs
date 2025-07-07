@@ -513,7 +513,7 @@ dependencies = [
 
 [[package]]
 name = "egginc-mission-notifier"
-version = "2.6.1"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "async-trait",

@@ -1,7 +1,7 @@
-use super::{versions::prelude::*, DBResult};
-use crate::types::{Account, AccountMap, Contract, ContractCache, ContractSpec, SpaceShip, User};
+use super::types::*;
+use super::{DBResult, versions::prelude::*};
 use futures_util::StreamExt as _;
-use sqlx::{sqlite::SqliteConnectOptions, Connection, SqliteConnection};
+use sqlx::{Connection, SqliteConnection, sqlite::SqliteConnectOptions};
 
 #[derive(Debug)]
 pub struct Database {
@@ -82,6 +82,9 @@ impl Database {
                     }
                     v5::VERSION => {
                         v6::merge_v5(&mut self.conn).await?;
+                    }
+                    v6::VERSION => {
+                        v7::merge_v6(&mut self.conn).await?;
                     }
                     current::VERSION => break,
                     _ => {
@@ -464,6 +467,7 @@ impl Database {
             .await?;
         Ok(())
     }
+
     pub async fn insert_contract_spec(
         &mut self,
         id: &str,
@@ -524,6 +528,113 @@ impl Database {
             .bind(room)
             .fetch_optional(&mut self.conn)
             .await
+    }
+
+    pub async fn query_contract_cache_timestamp(
+        &mut self,
+        id: &str,
+        room: &str,
+    ) -> DBResult<Option<i64>> {
+        Ok(sqlx::query_as::<_, (i64,)>(
+            r#"SELECT "timestamp" FROM "contract_cache" WHERE "id" = ? AND "room" = ?"#,
+        )
+        .bind(id)
+        .bind(room)
+        .fetch_optional(&mut self.conn)
+        .await?
+        .map(|(x,)| x))
+    }
+
+    pub async fn query_subscribe_single(
+        &mut self,
+        id: &str,
+        room: &str,
+    ) -> DBResult<Option<SubscribeInfo>> {
+        sqlx::query_as(r#"SELECT * FROM "subscribe" WHERE "id" = ? AND "room" = ?"#)
+            .bind(id)
+            .bind(room)
+            .fetch_optional(&mut self.conn)
+            .await
+    }
+
+    pub async fn query_subscribe(&mut self, timestamp: i64) -> DBResult<Vec<SubscribeInfo>> {
+        sqlx::query_as(r#"SELECT * FROM "subscribe" WHERE "notified" = 0 AND "est" < ?"#)
+            .bind(timestamp)
+            .fetch_all(&mut self.conn)
+            .await
+    }
+
+    pub async fn modify_subscribe(
+        &mut self,
+        id: &str,
+        room: &str,
+        user: i64,
+        is_del: bool,
+    ) -> DBResult<()> {
+        let Some(mut sub) = self.query_subscribe_single(id, room).await? else {
+            return self.insert_subscribe(id, room, user).await;
+        };
+        let exist = sub.check_user(user);
+        if (is_del && !exist) || (!is_del && exist) {
+            return Ok(());
+        }
+        if is_del {
+            sub.add_user(user);
+        } else {
+            sub.delete_user(user);
+        }
+        self.update_subscribe(sub.id(), sub.room(), &sub.user_to_str(), sub.est())
+            .await
+    }
+
+    async fn update_subscribe(
+        &mut self,
+        id: &str,
+        room: &str,
+        users: &str,
+        est: i64,
+    ) -> DBResult<()> {
+        sqlx::query(
+            r#"UPDATE "subscribe" SET "users" = ?, "est" = ? WHERE "id" = ? AND "room" = ?"#,
+        )
+        .bind(users)
+        .bind(est)
+        .bind(id)
+        .bind(room)
+        .execute(&mut self.conn)
+        .await?;
+        Ok(())
+    }
+
+    async fn insert_subscribe(&mut self, id: &str, room: &str, user: i64) -> DBResult<()> {
+        sqlx::query(r#"INSERT INTO "subscribe" VALUES (?, ?, ?, ?)"#)
+            .bind(id)
+            .bind(room)
+            .bind(user.to_string())
+            .bind(0)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn update_subscribe_est(&mut self, id: &str, room: &str, est: i64) -> DBResult<()> {
+        sqlx::query(r#"UPDATE "subscribe" SET "est" = ? WHERE "id" = ? AND "room" = ?"#)
+            .bind(est)
+            .bind(id)
+            .bind(room)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn update_subscribe_notified(&mut self, id: &str, room: &str) -> DBResult<()> {
+        sqlx::query(r#"UPDATE "subscribe" SET "notified" = ? WHERE "id" = ? AND "room" = ?"#)
+            .bind(true)
+            .bind(id)
+            .bind(room)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
     }
 
     pub async fn close(self) -> DBResult<()> {

@@ -1,4 +1,4 @@
-use crate::types::{Account, AccountMap, Contract, ContractCache, ContractSpec, SpaceShip, User};
+use super::types::*;
 use std::collections::HashMap;
 pub(super) type CheckerArg = ((f64, f64, i64), fn((&[u8], i64), (f64, f64, i64)) -> bool);
 
@@ -120,6 +120,11 @@ pub enum DatabaseEvent {
         id: String,
         room: String
     },
+    #[ret(Option<i64>)]
+    ContractCacheTimestampQuery {
+        id: String,
+        room: String
+    },
     #[ret(bool)]
     ContractCacheInsert {
         id: String,
@@ -135,6 +140,15 @@ pub enum DatabaseEvent {
     },
     #[ret(bool)]
     ContractSpecInsert(ContractSpec),
+
+    SubscribeNew(String, String, i64),
+    #[ret(Vec<SubscribeInfo>)]
+    SubscribeFetch(Option<i64>),
+    SubscribeTimestampUpdate(String, String, i64),
+    SubscribeNotified(String, String),
+    #[ret(Option<SubscribeInfo>)]
+    SubscribeSingleFetch(String, String),
+    SubscribeDel(String, String, i64),
 
     Terminate,
 }

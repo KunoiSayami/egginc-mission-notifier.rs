@@ -4,10 +4,11 @@ use anyhow::anyhow;
 use itertools::Itertools as _;
 use teloxide::{prelude::Requester as _, types::Message};
 
-use crate::types::{return_tf_emoji, timestamp_to_string, SpaceShip};
+use crate::database::types::SpaceShip;
+use crate::types::{return_tf_emoji, timestamp_to_string};
 
 use super::functions::replace_all;
-use super::{arg::NecessaryArg, BotType, EI_CHECKER_RE};
+use super::{BotType, EI_CHECKER_RE, arg::NecessaryArg};
 
 pub(super) async fn handle_add_command(
     bot: BotType,

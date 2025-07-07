@@ -17,7 +17,7 @@ use crate::{
     bot::arg::NecessaryArg,
     config::Config,
     database::DatabaseHelper,
-    egg::monitor::{LAST_QUERY, MonitorHelper},
+    egg::monitor::{ContractSubscriberHelper, LAST_QUERY, LAST_SUBSCRIBE_QUERY, MonitorHelper},
     types::{BASE64, timestamp_to_string},
 };
 
@@ -71,12 +71,14 @@ pub async fn bot_run(
     config: Config,
     database: DatabaseHelper,
     monitor: MonitorHelper,
+    subscriber: ContractSubscriberHelper,
 ) -> anyhow::Result<()> {
     let arg = Arc::new(NecessaryArg::new(
         database,
         config.admin().iter().map(|u| ChatId(*u)).collect(),
         monitor,
         config.telegram().username().to_string(),
+        subscriber,
     ));
 
     let handle_command_message = Update::filter_message().branch(
@@ -198,10 +200,14 @@ async fn handle_ping(bot: BotType, msg: Message, arg: Arc<NecessaryArg>) -> anyh
     bot.send_message(
         msg.chat.id,
         format!(
-            "Chat id: `{id}`\nLast system query: `{last_query}`\nCheck period: {check_period}s\nFetch period: {fetch_period}s\nIs admin: {is_admin}\nVersion: `{version}`",
+            "Chat id: `{id}`\nLast system query: `{last_query}`\nCheck period: {check_period}s\nFetch period: {fetch_period}s\nIs admin: {is_admin}\nVersion: `{version}`\n\
+            Last subscribe query: {last_subscribe_query}",
             id = msg.chat.id.0,
             last_query = replace_all(&timestamp_to_string(
                 LAST_QUERY.load(std::sync::atomic::Ordering::Relaxed) as i64
+            )),
+            last_subscribe_query = replace_all(&timestamp_to_string(
+                LAST_SUBSCRIBE_QUERY.load(std::sync::atomic::Ordering::Relaxed) as i64
             )),
             check_period = CHECK_PERIOD.get().unwrap(),
             fetch_period = FETCH_PERIOD.get().unwrap(),

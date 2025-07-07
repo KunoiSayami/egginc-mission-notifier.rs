@@ -14,20 +14,19 @@ use tokio::{task::JoinHandle, time::interval};
 
 use crate::CACHE_REQUEST_OFFSET;
 use crate::bot::replace_all;
-use crate::egg::functions::parse_num_with_unit;
+use crate::database::types::{Account, AccountMap, ContractSpec, SpaceShip, convert_set};
+
 use crate::functions::build_reqwest_client;
-use crate::types::{
-    AccountMap, ContractSpec, QueryError, SpaceShip, convert_set, fmt_time_delta_short,
-    timestamp_to_string,
-};
+use crate::types::{QueryError, fmt_time_delta_short, timestamp_to_string};
 use crate::{
     CACHE_REFRESH_PERIOD, CHECK_PERIOD, FETCH_PERIOD, bot::BotType, database::DatabaseHelper,
-    types::Account,
 };
 
-use super::functions::{decode_data, get_missions, request};
-use super::proto::ContractCoopStatusResponse;
-use super::types::ContractGradeSpec;
+use crate::egg::{
+    functions::{decode_data, get_missions, parse_num_with_unit, request},
+    proto::ContractCoopStatusResponse,
+    types::ContractGradeSpec,
+};
 
 pub static LAST_QUERY: LazyLock<AtomicU64> = LazyLock::new(|| AtomicU64::new(0));
 
@@ -178,6 +177,7 @@ impl Monitor {
         Ok(())
     }
 
+    // For debug purpose only
     fn insert_fake_spaceships(
         cache: &mut BTreeMap<i64, HashSet<SpaceShip>>,
         ei: String,
@@ -198,7 +198,7 @@ impl Monitor {
         database: &DatabaseHelper,
         account_map: &AccountMap,
         bot: &BotType,
-        backup: &Option<super::proto::Backup>,
+        backup: &Option<crate::egg::proto::Backup>,
     ) -> anyhow::Result<()> {
         let Some(username) = backup.as_ref().map(|s| s.user_name().to_string()) else {
             return Err(anyhow!("Backup is empty"));
@@ -225,7 +225,7 @@ impl Monitor {
     async fn inject_contracts(
         ei: &str,
         database: &DatabaseHelper,
-        info: &super::proto::EggIncFirstContactResponse,
+        info: &crate::egg::proto::EggIncFirstContactResponse,
     ) -> Option<()> {
         /* {
             let file = tokio::fs::OpenOptions::new()
@@ -294,7 +294,7 @@ impl Monitor {
                 .contract_cache_insert(
                     contract.contract_identifier().into(),
                     contract.coop_identifier().into(),
-                    super::functions::encode_to_byte(contract),
+                    crate::egg::functions::encode_to_byte(contract),
                     contract.cleared_for_exit() || contract.all_members_reporting(),
                     Some(backup_timestamp as i64),
                     Some((

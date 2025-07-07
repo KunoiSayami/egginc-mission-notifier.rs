@@ -15,10 +15,10 @@ use crate::{
     bot::replace_all,
     egg::{decode_and_calc_score, encode_to_byte, query_coop_status},
     functions::build_reqwest_client,
-    types::{fmt_time_delta_short, return_tf_emoji, timestamp_to_string, BASE64},
+    types::{BASE64, fmt_time_delta_short, return_tf_emoji, timestamp_to_string},
 };
 
-use super::{arg::NecessaryArg, functions::link_preview_options, BotType, EI_CHECKER_RE, SPACE_RE};
+use super::{BotType, EI_CHECKER_RE, SPACE_RE, arg::NecessaryArg, functions::link_preview_options};
 
 pub(super) static COOP_ID_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[\w]+(-[\w\d]+)*$").unwrap());
@@ -50,6 +50,11 @@ pub(super) enum ContractCommand {
         enable: bool,
         ei: String,
     },
+    Subscribe {
+        id: String,
+        room: String,
+        delete: bool,
+    },
 }
 
 impl ContractCommand {
@@ -59,6 +64,7 @@ impl ContractCommand {
         if let Some((second, third)) = second.split_once(' ') {
             let (third, forth) = third.split_once(' ').unwrap_or((third, ""));
             let require_detail = forth.eq("detail") || forth.eq("d");
+            let is_delete = forth.eq("d") || forth.eq("del");
             match first {
                 "calc" if EI_CHECKER_RE.is_match(second) && ROOM_RE.is_match(third) => {
                     Some(Self::Calc {
@@ -72,6 +78,13 @@ impl ContractCommand {
                         id: second.into(),
                         room: third.into(),
                         detail: require_detail,
+                    })
+                }
+                "sub" if COOP_ID_RE.is_match(second) && ROOM_RE.is_match(third) => {
+                    Some(Self::Subscribe {
+                        id: second.into(),
+                        room: third.into(),
+                        delete: is_delete,
                     })
                 }
                 _ => None,
@@ -89,6 +102,11 @@ impl ContractCommand {
                         None
                     }
                 }
+                "sub" if second.eq("list") => Some(Self::Subscribe {
+                    id: "/list".into(),
+                    room: "".into(),
+                    delete: false,
+                }),
                 _ => None,
             }
         }
@@ -145,6 +163,9 @@ pub(super) async fn route_contract_command(
         }
         ContractCommand::Control { enable, ei } => {
             handle_enable_contract_tracker(bot, chat_id, arg, ei, enable).await
+        }
+        ContractCommand::Subscribe { id, room, delete } => {
+            handle_subscribe(bot, chat_id, arg, id, room, delete).await
         }
     }
 }
@@ -342,15 +363,16 @@ async fn process_calc(
         _ => unreachable!(),
     };
 
-    let Some(score) = decode_and_calc_score(contract_spec, &body, false)? else {
-        return Ok(format!("`{contract}` \\[`{room_id}`\\]\n\
+    let Some(score) = decode_and_calc_score(contract_spec, &body, false)?.into_optional() else {
+        return Ok(format!(
+            "`{contract}` \\[`{room_id}`\\]\n\
         \n\
         This contract will not be completed before it expires\\. Check [web](https://eicoop-carpet.netlify.app/{contract_id}/{room}) for more information\\.\n\
         Last refresh: {timestamp}",
-        contract = replace_all(contract_id),
-        room_id = replace_all(&room),
-        timestamp = replace_all(&timestamp_to_string(current_time)),
-    ));
+            contract = replace_all(contract_id),
+            room_id = replace_all(&room),
+            timestamp = replace_all(&timestamp_to_string(current_time)),
+        ));
     };
 
     let sub_title = if !score.is_finished() {
@@ -493,6 +515,46 @@ pub(super) async fn handle_callback_query(
         _ => {}
     }
     bot.answer_callback_query(msg.id).await?;
+    Ok(())
+}
+
+async fn handle_subscribe(
+    bot: BotType,
+    chat_id: ChatId,
+    arg: Arc<NecessaryArg>,
+    contract: String,
+    room: String,
+    delete: bool,
+) -> anyhow::Result<()> {
+    if contract.eq("/list") {}
+
+    let msg = if delete {
+        let ret = format!(
+            "Contract {}/{} deleted!",
+            replace_all(&contract),
+            replace_all(&room)
+        );
+        arg.database()
+            .subscribe_del(contract, room, chat_id.0)
+            .await;
+        ret
+    } else {
+        let ret = format!(
+            "Contract {}/{} add!",
+            replace_all(&contract),
+            replace_all(&room)
+        );
+
+        arg.database()
+            .subscribe_new(contract, room, chat_id.0)
+            .await;
+        ret
+    };
+
+    arg.subscriber().new_contract().await;
+
+    bot.send_message(chat_id, msg).await?;
+
     Ok(())
 }
 

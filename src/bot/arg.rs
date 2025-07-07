@@ -1,6 +1,9 @@
 use teloxide::types::ChatId;
 
-use crate::{database::DatabaseHelper, egg::monitor::MonitorHelper};
+use crate::{
+    database::DatabaseHelper,
+    egg::monitor::{ContractSubscriberHelper, MonitorHelper},
+};
 
 #[derive(Clone, Debug)]
 pub(super) struct NecessaryArg {
@@ -8,6 +11,7 @@ pub(super) struct NecessaryArg {
     admin: Vec<ChatId>,
     monitor: MonitorHelper,
     username: String,
+    subscriber: ContractSubscriberHelper,
 }
 
 impl NecessaryArg {
@@ -16,12 +20,14 @@ impl NecessaryArg {
         admin: Vec<ChatId>,
         monitor: MonitorHelper,
         username: String,
+        subscriber: ContractSubscriberHelper,
     ) -> Self {
         Self {
             database,
             admin,
             monitor,
             username,
+            subscriber,
         }
     }
 
@@ -43,5 +49,9 @@ impl NecessaryArg {
 
     pub fn username(&self) -> &str {
         &self.username
+    }
+
+    pub(super) fn subscriber(&self) -> &ContractSubscriberHelper {
+        &self.subscriber
     }
 }

@@ -4,9 +4,10 @@ use std::{collections::HashMap, sync::LazyLock};
 use types::CoopScore;
 
 use crate::{
+    database::types::ContractSpec,
     egg::functions::{build_coop_status_request, parse_num_with_unit},
-    types::ContractSpec,
 };
+pub use types::CoopResult;
 
 use super::{
     definitions::{API_BACKEND, OOM_UNIT},
@@ -140,7 +141,7 @@ pub fn decode_and_calc_score(
     spec: ContractSpec,
     data: &[u8],
     authorized: bool,
-) -> anyhow::Result<Option<CoopScore>> {
+) -> anyhow::Result<CoopResult> {
     let res: proto::ContractCoopStatusResponse = decode_data(data, authorized)?;
     /* let mut output = vec![];
 
@@ -162,7 +163,14 @@ pub fn decode_and_calc_score(
     )); */
 
     //println!("{res:#?}");
-    CoopScore::calc(res, &spec).map_err(|e| anyhow!("{e}"))
+    calc_score(spec, res)
+}
+
+pub fn calc_score(
+    spec: ContractSpec,
+    data: proto::ContractCoopStatusResponse,
+) -> anyhow::Result<CoopResult> {
+    CoopScore::calc(data, &spec).map_err(|e| anyhow!("{e}"))
 }
 
 mod types {
@@ -171,13 +179,14 @@ mod types {
     use chrono::TimeDelta;
 
     use crate::{
+        database::types::ContractSpec,
         egg::{
             definitions::{DEFAULT_EARNING_BONUS_ROLE, EARNING_BONUS_ROLE},
             functions::grade_to_big_g,
             proto::contract::PlayerGrade,
             types::ContractGradeSpec,
         },
-        types::{fmt_time_delta_short, ContractSpec},
+        types::fmt_time_delta_short,
     };
 
     use super::parse_num_with_unit;
@@ -272,11 +281,7 @@ mod types {
         }
 
         pub fn finalized(&self) -> &'static str {
-            if self.finalized {
-                " ✅"
-            } else {
-                ""
-            }
+            if self.finalized { " ✅" } else { "" }
         }
 
         pub fn timestamp(&self, cache_timestamp: Option<i64>) -> Option<f64> {
@@ -358,7 +363,27 @@ mod types {
 
     enum CoopStatus {
         Normal(f64, f64, f64, Vec<UserScore>),
-        OutOfTime,
+        OutOfTime(f64),
+    }
+
+    pub enum CoopResult {
+        Normal(CoopScore),
+        OutOfTime(f64),
+    }
+
+    impl From<CoopResult> for Option<CoopScore> {
+        fn from(value: CoopResult) -> Self {
+            match value {
+                CoopResult::Normal(coop_score) => Some(coop_score),
+                CoopResult::OutOfTime(_) => None,
+            }
+        }
+    }
+
+    impl CoopResult {
+        pub fn into_optional(self) -> Option<CoopScore> {
+            self.into()
+        }
     }
 
     #[derive(Clone)]
@@ -378,7 +403,7 @@ mod types {
         pub fn calc(
             data: super::proto::ContractCoopStatusResponse,
             spec: &ContractSpec,
-        ) -> Result<Option<Self>, &'static str> {
+        ) -> Result<CoopResult, &'static str> {
             let Some(grade_spec) = spec.get(&data.grade()) else {
                 return Err("Grade spec not found");
             };
@@ -392,13 +417,15 @@ mod types {
                 replace_all(&parse_num_with_unit(grade_spec.goal3())),
             )); */
 
-            let CoopStatus::Normal(completion_time, expect_remain_time, _remain_time, players) =
-                Self::calc_total_score(&data, grade_spec, spec)
-            else {
-                return Ok(None);
-            };
+            let (completion_time, expect_remain_time, _remain_time, players) =
+                match Self::calc_total_score(&data, grade_spec, spec) {
+                    CoopStatus::Normal(c, e, r, user_scores) => (c, e, r, user_scores),
+                    CoopStatus::OutOfTime(exp) => {
+                        return Ok(CoopResult::OutOfTime(exp));
+                    }
+                };
 
-            Ok(Some(Self {
+            Ok(CoopResult::Normal(Self {
                 //token_time: spec.token_time(),
                 spec: *grade_spec,
                 expect_remain_time,
@@ -454,7 +481,9 @@ mod types {
                 let expect_remain_time = (remain - offline_egg) / total_elr;
 
                 if expect_remain_time > coop_total_time {
-                    return CoopStatus::OutOfTime;
+                    return CoopStatus::OutOfTime(
+                        coop_total_time - coop.seconds_remaining() + expect_remain_time,
+                    );
                 }
 
                 /* let completion_time =

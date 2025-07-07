@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use log::error;
 
 use super::{
+    DBResult,
     context::Database,
     event::{DatabaseEvent, DatabaseEventReceiver, DatabaseHelper},
-    DBResult,
 };
 
 pub struct DatabaseHandle {
@@ -268,6 +268,15 @@ impl DatabaseHandle {
                     .send(database.query_contract_cache(&id, &room).await?)
                     .ok();
             }
+            DatabaseEvent::ContractCacheTimestampQuery {
+                id,
+                room,
+                __private_sender,
+            } => {
+                __private_sender
+                    .send(database.query_contract_cache_timestamp(&id, &room).await?)
+                    .ok();
+            }
             DatabaseEvent::ContractStartTimeUpdate {
                 id,
                 room,
@@ -281,6 +290,34 @@ impl DatabaseHandle {
                 database
                     .update_contract_cache_timestamp(&id, &room, 0)
                     .await?;
+            }
+            DatabaseEvent::SubscribeFetch(timestamp, sender) => {
+                let ret = database
+                    .query_subscribe(
+                        timestamp.unwrap_or_else(|| kstool::time::get_current_second() as i64),
+                    )
+                    .await?;
+                sender.send(ret).ok();
+            }
+            DatabaseEvent::SubscribeDel(contract, room, user) => {
+                database
+                    .modify_subscribe(&contract, &room, user, true)
+                    .await?;
+            }
+            DatabaseEvent::SubscribeNew(contract, room, user) => {
+                database
+                    .modify_subscribe(&contract, &room, user, false)
+                    .await?;
+            }
+            DatabaseEvent::SubscribeSingleFetch(contract, room, sender) => {
+                let ret = database.query_subscribe_single(&contract, &room).await?;
+                sender.send(ret).ok();
+            }
+            DatabaseEvent::SubscribeTimestampUpdate(contract, room, est) => {
+                database.update_subscribe_est(&contract, &room, est).await?;
+            }
+            DatabaseEvent::SubscribeNotified(contract, room) => {
+                database.update_subscribe_notified(&contract, &room).await?;
             }
         }
         Ok(())

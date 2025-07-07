@@ -44,6 +44,9 @@ pub(super) enum AdminCommand<'a> {
         ei: &'a str,
         land_times: Vec<i64>,
     },
+    SubscribeInsertFake {
+        notify_times: Vec<i64>,
+    },
     ContractSave {
         id: &'a str,
         room: &'a str,
@@ -136,6 +139,16 @@ impl<'a> TryFrom<&'a str> for AdminCommand<'a> {
                         })
                     }
                 }
+                "subscribe-insert" => Ok(Self::SubscribeInsertFake {
+                    notify_times: value
+                        .split(' ')
+                        .filter_map(|x| {
+                            x.parse()
+                                .inspect_err(|e| log::error!("Parse number error: {e:?}, ignored"))
+                                .ok()
+                        })
+                        .collect(),
+                }),
                 "contract-save" => {
                     let (second1, second2) =
                         second.split_once(' ').ok_or("Wrong command format")?;
@@ -163,6 +176,9 @@ impl<'a> TryFrom<&'a str> for AdminCommand<'a> {
             match value {
                 "query" => Ok(Self::Query { ei: None }),
                 "list" => Ok(Self::ListUsers),
+                "subscribe-insert" => Ok(Self::SubscribeInsertFake {
+                    notify_times: vec![30, 60],
+                }),
                 /* "test" => Ok(Self::Test), */
                 _ => Err("Invalid command"),
             }
@@ -226,6 +242,13 @@ async fn handle_admin_sub_command(
         AdminCommand::CacheInsertFake { ei, land_times } => {
             arg.monitor().insert_cache(ei.to_string(), land_times).await;
             bot.send_message(msg.chat.id, "New cache inserted").await
+        }
+        AdminCommand::SubscribeInsertFake { notify_times } => {
+            arg.subscriber()
+                .insert_cache(msg.chat.id.0, notify_times)
+                .await;
+            bot.send_message(msg.chat.id, "New subscribe inserted")
+                .await
         }
         AdminCommand::ContractCacheReset { id, room } => {
             arg.database()
