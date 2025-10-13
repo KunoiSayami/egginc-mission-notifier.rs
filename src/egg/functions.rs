@@ -11,6 +11,7 @@ use super::definitions::*;
 use super::proto;
 use super::proto::EggIncFirstContactResponse;
 use super::proto::MyContracts;
+use super::proto::backup::ResearchItem;
 //use super::proto::contract::GradeSpec;
 use super::types::SpaceShipInfo;
 
@@ -200,4 +201,34 @@ pub(crate) fn is_contract_cleared(raw: &[u8]) -> bool {
 
 pub(crate) fn extract_contracts(resp: &EggIncFirstContactResponse) -> Option<&MyContracts> {
     resp.backup.as_ref()?.contracts.as_ref()
+}
+
+pub(crate) fn extract_epic_research(items: &Vec<ResearchItem>) -> Option<serde_json::Value> {
+    let map = items
+        .iter()
+        .map(|x| (x.id(), x.level()))
+        .collect::<HashMap<_, _>>();
+    let mut u = HashMap::new();
+    for (index, name) in EPIC_RESEARCH_NAME.iter().enumerate() {
+        if let Some(data) = map.get(name) {
+            u.insert(index.to_string(), data);
+        } else {
+            log::warn!("[Epic Research] Missing {name}");
+        }
+    }
+
+    Some(serde_json::json!({
+        "e": 0,
+        "pl": 1,
+        "pb": 0,
+        "eo": false,
+        "et": 0,
+        "ed": 0,
+        "ul": 0,
+        "hc": false,
+        "c": { "d": true, "b": true, "s": true, "r": true, "t": true },
+        "u": u,
+        "i": (0..=23).map(|x| (x.to_string(), 0)).collect::<HashMap<_, _>>(),
+        "v": 2,
+    }))
 }

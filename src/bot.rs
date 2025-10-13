@@ -7,7 +7,7 @@ mod missions;
 
 use std::sync::LazyLock;
 
-use teloxide::{adaptors::DefaultParseMode, Bot};
+use teloxide::{Bot, adaptors::DefaultParseMode};
 
 pub type BotType = DefaultParseMode<Bot>;
 

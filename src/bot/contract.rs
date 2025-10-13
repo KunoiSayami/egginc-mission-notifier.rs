@@ -13,7 +13,7 @@ use anyhow::anyhow;
 
 use crate::{
     bot::replace_all,
-    egg::{decode_and_calc_score, encode_to_byte, query_coop_status},
+    egg::{decode_and_calc_score, decode_coop_status, encode_to_byte, query_coop_status},
     functions::build_reqwest_client,
     types::{BASE64, fmt_time_delta_short, return_tf_emoji, timestamp_to_string},
 };
@@ -35,6 +35,10 @@ pub(super) static CONTRACT_WEBSITE_RE: LazyLock<regex::Regex> = LazyLock::new(||
 pub(super) enum ContractCommand {
     List {
         ei: String,
+    },
+    ListUsers {
+        id: String,
+        room: String,
     },
     Calc {
         ei: String,
@@ -71,6 +75,12 @@ impl ContractCommand {
                         ei: second.into(),
                         id: third.into(),
                         detail: require_detail,
+                    })
+                }
+                "list-user" if COOP_ID_RE.is_match(second) && ROOM_RE.is_match(third) => {
+                    Some(Self::ListUsers {
+                        id: second.into(),
+                        room: third.into(),
                     })
                 }
                 "room" if COOP_ID_RE.is_match(second) && ROOM_RE.is_match(third) => {
@@ -166,6 +176,9 @@ pub(super) async fn route_contract_command(
         }
         ContractCommand::Subscribe { id, room, delete } => {
             handle_subscribe(bot, chat_id, arg, id, room, delete).await
+        }
+        ContractCommand::ListUsers { id, room } => {
+            handle_list_contract_users(bot, chat_id, arg, id, room).await
         }
     }
 }
@@ -554,6 +567,48 @@ async fn handle_subscribe(
     arg.subscriber().new_contract().await;
 
     bot.send_message(chat_id, msg).await?;
+
+    Ok(())
+}
+
+async fn handle_list_contract_users(
+    bot: BotType,
+    chat_id: ChatId,
+    arg: Arc<NecessaryArg>,
+    id: String,
+    room: String,
+) -> anyhow::Result<()> {
+    let Some(contract) = arg
+        .database()
+        .contract_cache_query(id.clone(), room.clone())
+        .await
+        .flatten()
+    else {
+        bot.send_message(
+            chat_id,
+            "Contract not found, try calculate contract score first",
+        )
+        .await?;
+        return Ok(());
+    };
+    let coop = decode_coop_status(contract.body(), false)?;
+    let ret = coop
+        .contributors
+        .into_iter()
+        .map(|x| {
+            format!(
+                "**{}** `{}`",
+                replace_all(x.user_name()),
+                replace_all(x.uuid())
+            )
+        })
+        .join("\n");
+
+    bot.send_message(
+        chat_id,
+        format!("**{}/{}**\n{ret}", replace_all(&id), replace_all(&room)),
+    )
+    .await?;
 
     Ok(())
 }

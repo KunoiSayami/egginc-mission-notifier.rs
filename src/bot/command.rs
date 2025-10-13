@@ -17,7 +17,10 @@ use crate::{
     bot::arg::NecessaryArg,
     config::Config,
     database::DatabaseHelper,
-    egg::monitor::{ContractSubscriberHelper, LAST_QUERY, LAST_SUBSCRIBE_QUERY, MonitorHelper},
+    egg::{
+        decode_coop_status, extract_epic_research,
+        monitor::{ContractSubscriberHelper, LAST_QUERY, LAST_SUBSCRIBE_QUERY, MonitorHelper},
+    },
     types::{BASE64, timestamp_to_string},
 };
 
@@ -35,6 +38,7 @@ enum Command {
     Recent { user: String },
     Admin { line: String },
     Start { args: String },
+    EpicExport { cmd: String },
     Help,
     Ping,
 }
@@ -114,6 +118,9 @@ pub async fn bot_run(
                             Command::Contract { cmd } => {
                                 route_contract_command(bot, arg, msg.chat.id, msg.id, cmd, false)
                                     .await
+                            }
+                            Command::EpicExport { cmd } => {
+                                handle_epic_export_command(bot, arg, msg, cmd).await
                             }
                             Command::Help => handle_help(bot, msg).await,
                             Command::Start { args: _ } => {
@@ -225,14 +232,78 @@ async fn handle_help(bot: BotType, msg: Message) -> anyhow::Result<()> {
     /list `\\[ei\\]` List all EI belong your telegram account\\.\n\
     /missions Display recent 6 rocket missions\\.\n\
     /recent Display recent 1 hour land missions\\.\n\
-    /remove `\\<EI\\>` Remove your account from this bot\\.\n\n\
+    /remove `\\<EI\\>` Remove your account from this bot\\.\n\
+    /epic\\_export `\\<contract-id\\>` `\\<room-id\\>` `\\<user-uuid\\>`\n\
     Contract rated:\n\
     `/contract list` List your recent contracts, only available when contract tracker enabled\\.\n\
     `/contract calc \\<EI\\> \\<contract\\-id\\>` Calculate user's contract score\\.\n\
     `/contract room \\<contract\\-id\\> \\<room\\-id\\> \\[detail\\]` Calculate contract score by specify room ID\\.\n\
-    `/contract enable\\|disable <EI>` Enable / Disable contract tracker \\(After add to bot\\)\\.\n\n\
+    `/contract list-user \\<contract\\-id\\> \\<room\\-id\\>` List contract users by specify room ID\\.\n\
+    `/contract enable\\|disable \\<EI\\>` Enable / Disable contract tracker \\(After add to bot\\)\\.\n\n\
     Note:\n\
     `\\[\\.\\.\\.\\]` means optional string\\.
     ").await?;
+    Ok(())
+}
+
+async fn handle_epic_export_command(
+    bot: BotType,
+    arg: Arc<NecessaryArg>,
+    msg: Message,
+    cmd: String,
+) -> anyhow::Result<()> {
+    let parse = || {
+        let mut iter = cmd.split_whitespace();
+        let id = iter.next()?;
+        let room = iter.next()?;
+        let user = iter.next()?;
+        Some((id, room, user))
+    };
+
+    let Some((id, room, user)) = parse() else {
+        bot.send_message(msg.chat.id, "Format error: \\<id\\> \\<room\\> \\<user\\>")
+            .await?;
+        return Ok(());
+    };
+
+    let Some(contract) = arg
+        .database()
+        .contract_cache_query(id.into(), room.into())
+        .await
+        .flatten()
+    else {
+        bot.send_message(
+            msg.chat.id,
+            "Cache missing, try calculate contract score first",
+        )
+        .await?;
+        return Ok(());
+    };
+
+    for farm in decode_coop_status(contract.body(), false)?.contributors {
+        if farm.uuid().eq(user) {
+            let Some(info) = farm.farm_info else {
+                bot.send_message(
+                    msg.chat.id,
+                    "Farm info not found, maybe user is not share their farm info",
+                )
+                .await?;
+                return Ok(());
+            };
+
+            let ret = if let Some(x) = extract_epic_research(&info.epic_research) {
+                format!(
+                    "[Epic Research Progress](https://royalphysique\\.net/eggs/\\?data\\={})",
+                    base64::engine::general_purpose::STANDARD
+                        .encode(serde_json::to_string(&x).unwrap())
+                )
+            } else {
+                "Epic research item missing, please check console".into()
+            };
+            bot.send_message(msg.chat.id, ret).await?;
+            break;
+        }
+    }
+
     Ok(())
 }

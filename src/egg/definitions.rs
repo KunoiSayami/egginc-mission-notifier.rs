@@ -82,3 +82,30 @@ const fn determine_api() -> &'static str {
         None => DEFAULT_API_BACKEND,
     }
 }
+
+pub(super) const EPIC_RESEARCH_NAME: &[&str] = &[
+    "hold_to_hatch", // 0
+    "epic_hatchery",
+    "epic_internal_incubators",
+    "video_doubler_time",
+    "epic_clucking",
+    "epic_multiplier", // 5
+    "cheaper_contractors",
+    "bust_unions",
+    "cheaper_research",
+    "silo_capacity",
+    "int_hatch_sharing", // 10
+    "int_hatch_calm",
+    "accounting_tricks",
+    "soul_eggs",
+    "prestige_bonus",
+    "drone_rewards", // 15
+    "epic_egg_laying",
+    "transportation_lobbyist",
+    "prophecy_bonus",
+    "hold_to_research",
+    "afx_mission_time", // 20
+    "afx_mission_capacity",
+    "warp_shift",        // should empty
+    "epic_silo_quality", // should empty
+];
