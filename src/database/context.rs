@@ -550,7 +550,7 @@ impl Database {
         id: &str,
         room: &str,
     ) -> DBResult<Option<SubscribeInfo>> {
-        sqlx::query_as(r#"SELECT * FROM "subscribe" WHERE "id" = ? AND "room" = ?"#)
+        sqlx::query_as(r#"SELECT * FROM "subscriber" WHERE "id" = ? AND "room" = ?"#)
             .bind(id)
             .bind(room)
             .fetch_optional(&mut self.conn)
@@ -558,7 +558,7 @@ impl Database {
     }
 
     pub async fn query_subscribe(&mut self, timestamp: i64) -> DBResult<Vec<SubscribeInfo>> {
-        sqlx::query_as(r#"SELECT * FROM "subscribe" WHERE "notified" = 0 AND "est" < ?"#)
+        sqlx::query_as(r#"SELECT * FROM "subscriber" WHERE "notified" = 0 AND "est" < ?"#)
             .bind(timestamp)
             .fetch_all(&mut self.conn)
             .await
@@ -595,7 +595,7 @@ impl Database {
         est: i64,
     ) -> DBResult<()> {
         sqlx::query(
-            r#"UPDATE "subscribe" SET "users" = ?, "est" = ? WHERE "id" = ? AND "room" = ?"#,
+            r#"UPDATE "subscriber" SET "users" = ?, "est" = ? WHERE "id" = ? AND "room" = ?"#,
         )
         .bind(users)
         .bind(est)
@@ -607,7 +607,7 @@ impl Database {
     }
 
     async fn insert_subscribe(&mut self, id: &str, room: &str, user: i64) -> DBResult<()> {
-        sqlx::query(r#"INSERT INTO "subscribe" VALUES (?, ?, ?, ?)"#)
+        sqlx::query(r#"INSERT INTO "subscriber" VALUES (?, ?, ?, ?)"#)
             .bind(id)
             .bind(room)
             .bind(user.to_string())
@@ -618,7 +618,7 @@ impl Database {
     }
 
     pub async fn update_subscribe_est(&mut self, id: &str, room: &str, est: i64) -> DBResult<()> {
-        sqlx::query(r#"UPDATE "subscribe" SET "est" = ? WHERE "id" = ? AND "room" = ?"#)
+        sqlx::query(r#"UPDATE "subscriber" SET "est" = ? WHERE "id" = ? AND "room" = ?"#)
             .bind(est)
             .bind(id)
             .bind(room)
@@ -628,7 +628,7 @@ impl Database {
     }
 
     pub async fn update_subscribe_notified(&mut self, id: &str, room: &str) -> DBResult<()> {
-        sqlx::query(r#"UPDATE "subscribe" SET "notified" = ? WHERE "id" = ? AND "room" = ?"#)
+        sqlx::query(r#"UPDATE "subscriber" SET "notified" = ? WHERE "id" = ? AND "room" = ?"#)
             .bind(true)
             .bind(id)
             .bind(room)
