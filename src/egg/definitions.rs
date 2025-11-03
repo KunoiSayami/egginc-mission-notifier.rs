@@ -106,6 +106,6 @@ pub(super) const EPIC_RESEARCH_NAME: &[&str] = &[
     "hold_to_research",
     "afx_mission_time", // 20
     "afx_mission_capacity",
-    "warp_shift",        // should empty
-    "epic_silo_quality", // should empty
+    "", //"warp_shift",        // should empty
+    "", //"epic_silo_quality", // should empty
 ];

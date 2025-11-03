@@ -1,6 +1,6 @@
 [package]
 name = "egginc-mission-notifier"
-version = "3.2.0"
+version = "3.2.1"
 edition = "2024"
 
 [dependencies]
@@ -15,7 +15,7 @@ flate2 = { version = "1.1", features = ["zlib"] }
 futures-util = "0.3"
 itertools = "0.14"
 kstool = "0.2"
-kstool-helper-generator = "0.4"
+kstool-helper-generator = "0.5"
 log = "0.4"
 minicbor-serde = { version = "0.6.1", features = ["alloc"] }
 prost = "0.14"

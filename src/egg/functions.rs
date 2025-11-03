@@ -212,7 +212,7 @@ pub(crate) fn extract_epic_research(items: &Vec<ResearchItem>) -> Option<serde_j
     for (index, name) in EPIC_RESEARCH_NAME.iter().enumerate() {
         if let Some(data) = map.get(name) {
             u.insert(index.to_string(), data);
-        } else {
+        } else if !name.is_empty() {
             log::warn!("[Epic Research] Missing {name}");
         }
     }
