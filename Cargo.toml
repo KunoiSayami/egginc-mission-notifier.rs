@@ -1,6 +1,6 @@
 [package]
 name = "egginc-mission-notifier"
-version = "3.2.1"
+version = "3.5.0"
 edition = "2024"
 
 [dependencies]
@@ -38,6 +38,7 @@ toml = "0.9"
 
 [build-dependencies]
 prost-build = "0.14"
+ks-placeholder = "0.1.1"
 
 [package.metadata.cross.target.aarch64-unknown-linux-musl]
 #image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"

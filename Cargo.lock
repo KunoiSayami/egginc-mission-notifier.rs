@@ -503,7 +503,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "egginc-mission-notifier"
-version = "3.2.1"
+version = "3.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -515,6 +515,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "itertools 0.14.0",
+ "ks-placeholder",
  "kstool",
  "kstool-helper-generator",
  "log",
@@ -1247,6 +1248,17 @@ checksum = "b011eec8cc36da2aab2d5cff675ec18454fad408585853910a202391cf9f8e65"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "ks-placeholder"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5927ef72128e6c11900c08733d00107c19c44b60edbb467c0a9c8d82c9a66ee2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

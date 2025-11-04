@@ -2,6 +2,7 @@ mod coop;
 mod definitions;
 mod functions;
 pub mod monitor;
+mod private;
 #[allow(clippy::enum_variant_names, dead_code)]
 pub mod proto;
 pub mod types;
@@ -11,3 +12,5 @@ pub(crate) use functions::{
     encode_to_byte, extract_contracts, extract_epic_research, is_contract_cleared,
     request as ei_request,
 };
+#[allow(unused)]
+pub(crate) use private::*;

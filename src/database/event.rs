@@ -60,6 +60,14 @@ pub enum DatabaseEvent {
         ei: String,
         disabled: bool,
     },
+    AccountCacheInsert {
+        ei: String,
+        cache: String,
+    },
+    #[ret(Option<AccountCache>)]
+    AccountCacheQuery {
+        ei: String,
+    },
 
     MissionAdd {
         id: String,

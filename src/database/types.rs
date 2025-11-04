@@ -490,11 +490,7 @@ impl SubscribeInfo {
     pub fn delete_user(&mut self, user: i64) -> bool {
         let len = self.users.len();
         let original = std::mem::take(&mut self.users);
-
-        std::mem::swap(
-            &mut self.users,
-            &mut original.into_iter().filter(|x| x != &user).collect(),
-        );
+        self.users = original.into_iter().filter(|x| x != &user).collect();
 
         len == self.users.len()
     }
@@ -580,4 +576,22 @@ pub fn convert_set<T: Eq + Hash>(v: Vec<HashSet<T>>) -> Vec<T> {
         })
         .map(|h| h.into_iter().collect_vec())
         .unwrap_or_default()
+}
+
+#[allow(unused)]
+#[derive(Clone, Debug, FromRow)]
+pub struct AccountCache {
+    cache: String,
+    timestamp: i64,
+}
+
+#[allow(dead_code)]
+impl AccountCache {
+    pub fn cache(&self) -> &str {
+        &self.cache
+    }
+
+    pub fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }

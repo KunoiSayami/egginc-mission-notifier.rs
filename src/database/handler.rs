@@ -139,6 +139,17 @@ impl DatabaseHandle {
             DatabaseEvent::AccountStatusReset { ei, disabled } => {
                 database.account_status_reset(&ei, disabled).await?;
             }
+            DatabaseEvent::AccountCacheInsert { ei, cache } => {
+                database.insert_account_cache(&ei, cache).await?;
+            }
+            DatabaseEvent::AccountCacheQuery {
+                ei,
+                __private_sender,
+            } => {
+                __private_sender
+                    .send(database.query_account_cache(&ei).await?)
+                    .ok();
+            }
             DatabaseEvent::UserQueryAll(sender) => {
                 sender.send(database.query_all_user().await?).ok();
             }
@@ -163,11 +174,11 @@ impl DatabaseHandle {
                     timestamp.unwrap_or_else(|| kstool::time::get_current_second() as i64);
                 if let Some(original_cache) = database.query_contract_cache(&id, &room).await? {
                     __private_sender.send(true).ok();
-                    if let Some((args, checker)) = cache_checker {
-                        if !checker((original_cache.body(), original_cache.timestamp()), args) {
-                            //log::warn!("Trying update outdated cache, skip");
-                            return Ok(());
-                        }
+                    if let Some((args, checker)) = cache_checker
+                        && !checker((original_cache.body(), original_cache.timestamp()), args)
+                    {
+                        //log::warn!("Trying update outdated cache, skip");
+                        return Ok(());
                     }
                     database
                         .update_contract_cache(&id, &room, &cache, current, cleared)

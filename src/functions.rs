@@ -25,7 +25,7 @@ pub(crate) async fn download_contract(ei: &str) -> anyhow::Result<()> {
             .map_err(|e| anyhow!("Open {filename} error: {e:?}"))
     };
     let client = build_reqwest_client();
-    let response = ei_request(&client, ei).await?;
+    let response = ei_request(&client, ei, None).await?;
     let Some(contracts) = extract_contracts(&response) else {
         println!("Contracts is empty");
         return Ok(());

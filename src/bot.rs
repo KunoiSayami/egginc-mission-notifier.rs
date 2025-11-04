@@ -4,6 +4,7 @@ mod command;
 mod contract;
 mod functions;
 mod missions;
+mod private;
 
 use std::sync::LazyLock;
 

@@ -299,7 +299,7 @@ async fn handle_admin_sub_command(
         }
         AdminCommand::UserStatusSave { ei } => {
             let client = build_reqwest_client();
-            match ei_request(&client, ei).await {
+            match ei_request(&client, ei, None).await {
                 Ok(resp) => {
                     let s = format!("{resp:#?}");
 

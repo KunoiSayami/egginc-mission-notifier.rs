@@ -86,6 +86,9 @@ impl Database {
                     v6::VERSION => {
                         v7::merge_v6(&mut self.conn).await?;
                     }
+                    v7::VERSION => {
+                        v8::merge_v7(&mut self.conn).await?;
+                    }
                     current::VERSION => break,
                     _ => {
                         panic!("Unknown database version: {version}, exit")
@@ -635,6 +638,35 @@ impl Database {
             .execute(&mut self.conn)
             .await?;
         Ok(())
+    }
+
+    pub async fn insert_account_cache(&mut self, ei: &str, cache: String) -> DBResult<()> {
+        if self.query_account_cache(ei).await?.is_some() {
+            sqlx::query(
+                r#"UPDATE "account_cache" SET "cache" = ?, "timestamp" = ? WHERE "ei" = ?"#,
+            )
+            .bind(cache)
+            .bind(kstool::time::get_current_second() as i64)
+            .bind(ei)
+            .execute(&mut self.conn)
+            .await?;
+            return Ok(());
+        }
+
+        sqlx::query(r#"INSERT INTO "account_cache" VALUES (?, ?, ?)"#)
+            .bind(ei)
+            .bind(cache)
+            .bind(kstool::time::get_current_second() as i64)
+            .execute(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn query_account_cache(&mut self, ei: &str) -> DBResult<Option<AccountCache>> {
+        sqlx::query_as(r#"SELECT * FROM "account_cache" WHERE "ei" = ?"#)
+            .bind(ei)
+            .fetch_optional(&mut self.conn)
+            .await
     }
 
     pub async fn close(self) -> DBResult<()> {

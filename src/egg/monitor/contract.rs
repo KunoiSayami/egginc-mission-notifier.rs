@@ -192,13 +192,13 @@ impl ContractSubscriber {
     fn calc_contract_fetch_interval(current_time: i64, subscribe: &SubscribeInfo) -> i64 {
         let diff = subscribe.est() - current_time;
         if diff > 3600 * 24 {
-            return 3600 * 4;
+            3600 * 4
         } else if diff > 3600 * 6 {
-            return 3600 * 2;
+            3600 * 2
         } else if diff > 3600 {
-            return 3600;
+            3600
         } else {
-            return 1200;
+            1200
         }
     }
 

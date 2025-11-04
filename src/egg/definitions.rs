@@ -1,6 +1,6 @@
-pub(super) const VERSION: &str = "1.35.1";
-pub(super) const BUILD: &str = "111313";
-pub(super) const VERSION_NUM: u32 = 70;
+pub(super) const VERSION: &str = "1.35.2";
+pub(super) const BUILD: &str = "1.35.2.1";
+pub(super) const VERSION_NUM: u32 = 71;
 pub(super) const PLATFORM_STRING: &str = "IOS";
 pub(super) const DEVICE_ID: &str = "egginc-bot";
 pub(super) const PLATFORM: i32 = super::proto::Platform::Ios as i32;

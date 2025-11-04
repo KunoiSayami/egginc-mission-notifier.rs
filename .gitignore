@@ -12,3 +12,5 @@ target/
 *.out
 src/DATA
 *.db
+
+src/**/private*

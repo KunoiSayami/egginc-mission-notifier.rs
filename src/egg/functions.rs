@@ -5,13 +5,12 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use flate2::bufread::ZlibDecoder;
 use reqwest::Client;
 
-use crate::types::QueryError;
-
 use super::definitions::*;
 use super::proto;
 use super::proto::EggIncFirstContactResponse;
 use super::proto::MyContracts;
 use super::proto::backup::ResearchItem;
+use crate::types::QueryError;
 //use super::proto::contract::GradeSpec;
 use super::types::SpaceShipInfo;
 
@@ -25,7 +24,7 @@ pub(crate) fn parse_num_with_unit(mut num: f64) -> String {
         }
     }
     let unit = OOM_UNIT.get(count).unwrap_or(&DEFAULT_OOM_UNIT);
-    format!("{num:.2}{}", unit)
+    format!("{num:.2}{unit}")
 }
 
 pub(super) fn encode_to_base64<T: prost::Message>(input: &T) -> String {
@@ -108,13 +107,13 @@ pub fn build_coop_status_request(contract_id: &str, coop_id: &str, ei: Option<St
 }
 
 // Source: https://github.com/carpetsage/egg/blob/78cd2bdd7e020a3364e5575884135890cc01105c/lib/api/index.ts
-pub fn build_first_contract_request(ei: String) -> String {
+pub fn build_first_contract_request(ei: String, device_id: Option<&str>) -> String {
     let request = proto::EggIncFirstContactRequest {
         rinfo: build_basic_info(None),
         ei_user_id: Some(ei),
         user_id: None,
         game_services_id: None,
-        device_id: Some(DEVICE_ID.into()),
+        device_id: Some(device_id.unwrap_or(DEVICE_ID).into()),
         username: None,
         client_version: Some(VERSION_NUM),
         platform: Some(PLATFORM),
@@ -161,13 +160,14 @@ pub fn get_missions(data: proto::EggIncFirstContactResponse) -> Option<Vec<Space
 pub async fn request(
     client: &Client,
     ei: &str,
+    device_id: Option<&str>,
 ) -> Result<proto::EggIncFirstContactResponse, QueryError> {
-    let form = [("data", build_first_contract_request(ei.to_string()))]
-        .into_iter()
-        .collect::<HashMap<_, _>>();
     let resp = client
         .post(format!("{API_BACKEND}/ei/bot_first_contact"))
-        .form(&form)
+        .form(&HashMap::from([(
+            "data",
+            build_first_contract_request(ei.to_string(), device_id),
+        )]))
         .send()
         .await
         .map_err(QueryError::System)?
@@ -203,7 +203,7 @@ pub(crate) fn extract_contracts(resp: &EggIncFirstContactResponse) -> Option<&My
     resp.backup.as_ref()?.contracts.as_ref()
 }
 
-pub(crate) fn extract_epic_research(items: &Vec<ResearchItem>) -> Option<serde_json::Value> {
+pub(crate) fn extract_epic_research(items: &[ResearchItem]) -> Option<serde_json::Value> {
     let map = items
         .iter()
         .map(|x| (x.id(), x.level()))

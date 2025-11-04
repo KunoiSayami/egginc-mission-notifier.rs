@@ -337,17 +337,16 @@ impl Monitor {
                 .contract_query_spec(contract.contract_identifier().into())
                 .await
                 .flatten()
+                && let Some(spec) = spec.get(&contract.grade())
             {
-                if let Some(spec) = spec.get(&contract.grade()) {
-                    database
-                        .contract_start_time_update(
-                            contract.contract_identifier().into(),
-                            contract.coop_identifier().into(),
-                            kstool::time::get_current_second() as f64
-                                - (spec.length() - contract.seconds_remaining()),
-                        )
-                        .await;
-                }
+                database
+                    .contract_start_time_update(
+                        contract.contract_identifier().into(),
+                        contract.coop_identifier().into(),
+                        kstool::time::get_current_second() as f64
+                            - (spec.length() - contract.seconds_remaining()),
+                    )
+                    .await;
             }
             if seen {
                 continue;
@@ -396,7 +395,7 @@ impl Monitor {
             return Ok(false);
         };
 
-        let info = request(client, account.ei()).await?;
+        let info = request(client, account.ei(), None).await?;
 
         if account.contract_trace() {
             Self::inject_contracts(account.ei(), database, &info).await;
@@ -611,7 +610,7 @@ impl Monitor {
                 continue;
             };
             for spaceship in &missions {
-                database.mission_updated(spaceship.id().to_string()).await;
+                database.mission_updated(spaceship.id().into()).await;
             }
             for user in account_map.chat_ids() {
                 msg_map.entry(user).or_insert_with(Vec::new).push(format!(

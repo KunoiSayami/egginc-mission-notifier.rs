@@ -14,7 +14,10 @@ use teloxide::{
 
 use crate::{
     CHECK_PERIOD, FETCH_PERIOD,
-    bot::arg::NecessaryArg,
+    bot::{
+        arg::NecessaryArg,
+        private::{handle_send_command, handle_send_reply},
+    },
     config::Config,
     database::DatabaseHelper,
     egg::{
@@ -39,6 +42,7 @@ enum Command {
     Admin { line: String },
     Start { args: String },
     EpicExport { cmd: String },
+    Send { cmd: String },
     Help,
     Ping,
 }
@@ -123,6 +127,7 @@ pub async fn bot_run(
                                 handle_epic_export_command(bot, arg, msg, cmd).await
                             }
                             Command::Help => handle_help(bot, msg).await,
+                            Command::Send { cmd } => handle_send_command(bot, msg, cmd).await,
                             Command::Start { args: _ } => {
                                 bot.send_message(
                                     msg.chat.id,
@@ -139,6 +144,20 @@ pub async fn bot_run(
 
     let handle_message = Update::filter_message()
         .filter(|msg: Message| msg.chat.is_private())
+        .branch(
+            dptree::entry()
+                .filter(|msg: Message| {
+                    msg.text().is_some_and(|x| x.starts_with("send"))
+                        && msg.reply_to_message().is_some_and(|x| {
+                            x.text().is_some_and(|x| x.starts_with("send:"))
+                                && x.reply_markup().is_some()
+                        })
+                })
+                .endpoint(|msg: Message, bot: BotType| async move {
+                    handle_send_reply(bot, &msg).await?;
+                    Ok::<_, anyhow::Error>(())
+                }),
+        )
         .endpoint(
             |msg: Message, bot: BotType, arg: Arc<NecessaryArg>| async move {
                 let Some(text) = msg.text() else {
@@ -159,7 +178,7 @@ pub async fn bot_run(
                 if groups.len() >= 2 {
                     let first = groups[0];
                     let second = groups[1];
-                    let detail = groups.get(2).map(|x| x.eq(&"d")).unwrap_or_default();
+                    let detail = groups.get(2).is_some_and(|x| x.eq(&"d"));
 
                     if COOP_ID_RE.is_match(first) && ROOM_RE.is_match(second) {
                         let event = ContractCommand::new_room(first, second, detail);
@@ -171,6 +190,26 @@ pub async fn bot_run(
                 Ok(())
             },
         );
+
+    /*     let handle_reply = Update::filter_message()
+    .filter(|msg: Message| {
+        log::debug!(
+            "{}",
+            msg.chat.is_private()
+                && msg.reply_to_message().is_some_and(|x| {
+                    x.text().is_some_and(|x| x.starts_with("send"))
+                        && x.reply_markup().is_some()
+                })
+        );
+        msg.chat.is_private()
+            && msg.reply_to_message().is_some_and(|x| {
+                x.text().is_some_and(|x| x.starts_with("send")) && x.reply_markup().is_some()
+            })
+    })
+    .endpoint(|msg: Message, bot: BotType| async move {
+        handle_send_reply(bot, &msg).await?;
+        Ok::<_, anyhow::Error>(())
+    }); */
 
     let handle_callback_query = Update::filter_callback_query()
         .filter(|q: CallbackQuery| q.data.is_some())
@@ -185,6 +224,7 @@ pub async fn bot_run(
         dptree::entry()
             .branch(handle_command_message)
             .branch(handle_message)
+            //.branch(handle_reply)
             .branch(handle_callback_query),
     )
     .dependencies(dptree::deps![arg])
