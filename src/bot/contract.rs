@@ -12,7 +12,7 @@ use teloxide::{
 use anyhow::anyhow;
 
 use crate::{
-    bot::{private::handle_send_callback_query, replace_all},
+    bot::replace_all,
     egg::{decode_and_calc_score, decode_coop_status, encode_to_byte, query_coop_status},
     functions::build_reqwest_client,
     types::{BASE64, fmt_time_delta_short, return_tf_emoji, timestamp_to_string},
@@ -523,15 +523,6 @@ pub(super) async fn handle_callback_query(
                     bot.edit_message_reply_markup(msg.chat().id, msg.id())
                         .await?;
                 }
-            }
-        }
-        "send" | "send-r" => {
-            handle_send_callback_query(bot.clone(), &msg, arg).await?;
-        }
-        "cancel" => {
-            if let Some(msg) = msg.message {
-                bot.edit_message_reply_markup(msg.chat().id, msg.id())
-                    .await?;
             }
         }
         _ => {}

@@ -14,3 +14,4 @@ src/DATA
 *.db
 
 src/**/private*
+out/*

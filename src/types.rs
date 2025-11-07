@@ -32,6 +32,9 @@ pub fn fmt_time_delta(delta: chrono::TimeDelta) -> String {
     )
 }
 pub fn fmt_time_delta_short(delta: chrono::TimeDelta) -> String {
+    if delta.num_seconds() < 0 {
+        return "0h0m0s".into();
+    }
     let days = delta.num_days();
     let day_str = format!("{days}d");
     format!(
