@@ -120,7 +120,7 @@ pub async fn query_coop_status(
         .collect::<HashMap<_, _>>();
 
     let resp = client
-        .post(format!("{API_BACKEND}/ei/coop_status"))
+        .post(format!("{API_BACKEND}/ei/coop_status_bot"))
         .form(&form)
         .send()
         .await?;

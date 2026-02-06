@@ -1,6 +1,6 @@
 [package]
 name = "egginc-mission-notifier"
-version = "3.5.1"
+version = "3.6.0"
 edition = "2024"
 
 [dependencies]
@@ -14,15 +14,16 @@ env_logger = "0.11"
 flate2 = { version = "1.1", features = ["zlib"] }
 futures-util = "0.3"
 itertools = "0.14"
-kstool = "0.2"
-kstool-helper-generator = "0.5"
+kstool = "0.3"
+kstool-helper-generator = "0.7"
 log = "0.4"
 minicbor-serde = { version = "0.6.1", features = ["alloc"] }
 prost = "0.14"
 rand = "0.9"
 regex = "1"
-reqwest = { version = "0.12", default-features = false, features = [
-    "rustls-tls",
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls",
+    "form",
 ] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
