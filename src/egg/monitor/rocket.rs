@@ -10,6 +10,7 @@ use kstool_helper_generator::Helper;
 use reqwest::Client;
 use tap::TapOptional as _;
 use teloxide::prelude::Requester;
+use teloxide::types::ChatId;
 use tokio::{task::JoinHandle, time::interval};
 
 use crate::CACHE_REQUEST_OFFSET;
@@ -572,6 +573,17 @@ impl Monitor {
         convert_set(std::mem::replace(cache, tmp).into_values().collect_vec())
     }
 
+    fn is_user_unreachable(err: &teloxide::RequestError) -> bool {
+        matches!(
+            err,
+            teloxide::RequestError::Api(
+                teloxide::ApiError::BotBlocked
+                    | teloxide::ApiError::ChatNotFound
+                    | teloxide::ApiError::UserDeactivated
+            )
+        )
+    }
+
     async fn notify(
         missions: &[SpaceShip],
         database: &DatabaseHelper,
@@ -590,7 +602,8 @@ impl Monitor {
                 .push(mission);
         }
 
-        let mut msg_map = HashMap::new();
+        let mut msg_map: HashMap<ChatId, Vec<String>> = HashMap::new();
+        let mut user_eis: HashMap<ChatId, Vec<String>> = HashMap::new();
 
         for (ei, missions) in pending {
             let Some(account) = database
@@ -613,7 +626,8 @@ impl Monitor {
                 database.mission_updated(spaceship.id().into()).await;
             }
             for user in account_map.chat_ids() {
-                msg_map.entry(user).or_insert_with(Vec::new).push(format!(
+                user_eis.entry(user).or_default().push(ei.to_string());
+                msg_map.entry(user).or_default().push(format!(
                     "*{}*:\n{}",
                     replace_all(account.name()),
                     missions
@@ -624,8 +638,18 @@ impl Monitor {
             }
         }
 
-        for (player, msg) in msg_map {
-            bot.send_message(player, msg.join("\n\n")).await?;
+        for (player, msg) in &msg_map {
+            if let Err(e) = bot.send_message(*player, msg.join("\n\n")).await {
+                log::error!("Send message to user {} error: {e:?}", player.0);
+                if Self::is_user_unreachable(&e) {
+                    if let Some(eis) = user_eis.get(player) {
+                        for ei in eis {
+                            log::warn!("User {} is unreachable, removing from {ei}", player.0);
+                            database.user_remove_account(player.0, ei.clone()).await;
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
