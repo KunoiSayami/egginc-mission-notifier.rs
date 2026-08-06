@@ -1,23 +1,23 @@
 [package]
 name = "egginc-mission-notifier"
-version = "3.6.1"
+version = "3.6.2"
 edition = "2024"
 
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 chrono = "0.4"
 chrono-tz = "0.10"
 clap = { version = "4", features = ["cargo"] }
 env_logger = "0.11"
 flate2 = { version = "1.1", features = ["zlib"] }
 futures-util = "0.3"
-itertools = "0.14"
+itertools = "0.15"
 kstool = "0.3"
 kstool-helper-generator = "0.7"
 log = "0.4"
-minicbor-serde = { version = "0.6.1", features = ["alloc"] }
+minicbor-serde = { version = "0.7", features = ["alloc"] }
 prost = "0.14"
 rand = "0.10"
 regex = "1"
