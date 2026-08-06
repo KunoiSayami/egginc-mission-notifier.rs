@@ -139,8 +139,10 @@ pub fn decode_data<T: AsRef<[u8]>, Output: prost::Message + std::default::Defaul
         return Err(anyhow!("Message is empty"));
     }
     if tmp.compressed() {
-        let decoder = ZlibDecoder::new(tmp.message());
-        decode_data(decoder.into_inner(), false)
+        let mut decoder = ZlibDecoder::new(tmp.message());
+        let mut buffer = Vec::new();
+        std::io::Read::read_to_end(&mut decoder, &mut buffer)?;
+        decode_data(buffer, false)
     } else {
         decode_data(tmp.message(), false)
     }

@@ -15,7 +15,9 @@ use tokio::{task::JoinHandle, time::interval};
 
 use crate::CACHE_REQUEST_OFFSET;
 use crate::bot::replace_all;
-use crate::database::types::{Account, AccountMap, ContractSpec, SpaceShip, convert_set};
+use crate::database::types::{
+    Account, AccountMap, ContractSpec, DEFAULT_NICKNAME, SpaceShip, convert_set,
+};
 
 use crate::functions::build_reqwest_client;
 use crate::types::{QueryError, fmt_time_delta_short, timestamp_to_string};
@@ -209,7 +211,11 @@ impl Monitor {
             let msg = format!(
                 "User _{}_ changed their name from _{}_ to _{}_",
                 account.ei(),
-                replace_all(account.name()),
+                replace_all(if account.name().is_empty() {
+                    &*DEFAULT_NICKNAME
+                } else {
+                    account.name()
+                }),
                 replace_all(&username)
             );
             database
